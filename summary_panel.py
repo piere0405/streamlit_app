@@ -133,13 +133,15 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
            ("CUMPLEN META",cumplen_txt,"unidades ≥ 100%",GREEN,BLUE),
            card4]
     edit_fields=[]   # campos manuales -> texto nativo editable (no se dibujan en la imagen)
+    def dflt(v):     # valor por defecto editable cuando falta el dato manual
+        s=str(v).strip(); return s if (s and s not in ("-","None")) else "0"
     x0=2.86; gap=0.13; cw=(W-x0-0.20-gap*3)/4; cy=0.16; ch=top_h*0.66
     for i,(lab,val,sub,acc,vcol) in enumerate(cards):
         x=x0+i*(cw+gap); rbox(x,cy,cw,ch,CARDBG,0.07)
         ax.add_patch(FancyBboxPatch((x+0.12,cy+0.13),cw-0.24,0.065,boxstyle="round,pad=0,rounding_size=0.03",fc=acc,ec="none",mutation_aspect=1))
         T(x+0.16,cy+ch*0.30,lab,7.6,GREY,"bold")
         if i in (0,1):   # Activos totales / Pend. ingreso -> editable
-            edit_fields.append((x+0.14,cy+ch*0.58-0.19,cw-0.26,0.38,str(val),16.5,vcol.lstrip("#"),"l"))
+            edit_fields.append((x+0.14,cy+ch*0.58-0.19,cw-0.26,0.38,dflt(val),16.5,vcol.lstrip("#"),"l"))
         else:
             T(x+0.16,cy+ch*0.58,str(val),16.5,vcol,"bold")
         T(x+0.16,cy+ch*0.86,sub,7,GREY,st="italic")
@@ -162,8 +164,8 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
         if i%2==0: ax.add_patch(Rectangle((tx,y),tw,rh,fc=ALT))
         T(cx[0],y+rh/2,r["name"],10,BLUE,"bold")
         # Presupuesto y Conectados -> editables (manuales)
-        edit_fields.append((cx[1]-0.6,y+rh/2-0.15,1.2,0.30,str(r.get("presupuesto") or ""),9.3,"4A5A6A","ctr"))
-        edit_fields.append((cx[2]-0.6,y+rh/2-0.15,1.2,0.30,str(r.get("conectados") or ""),9.3,"4A5A6A","ctr"))
+        edit_fields.append((cx[1]-0.6,y+rh/2-0.15,1.2,0.30,dflt(r.get("presupuesto")),9.3,"4A5A6A","ctr"))
+        edit_fields.append((cx[2]-0.6,y+rh/2-0.15,1.2,0.30,dflt(r.get("conectados")),9.3,"4A5A6A","ctr"))
         if r.get("presupuesto"): sump+=toint(r["presupuesto"])
         if r.get("conectados"):  sumc+=toint(r["conectados"])
         suma+=r["avance"] or 0; sumpr+=r["proy"] or 0
@@ -181,8 +183,8 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     # TOTAL
     ax.add_patch(Rectangle((tx,y),tw,rh,fc="#EAF0F6"))
     T(cx[0],y+rh/2,"TOTAL / PROMEDIO",9.3,NAVY,"bold")
-    edit_fields.append((cx[1]-0.6,y+rh/2-0.15,1.2,0.30,(str(sump) if sump else ""),9.3,"123A5E","ctr"))
-    edit_fields.append((cx[2]-0.6,y+rh/2-0.15,1.2,0.30,(str(sumc) if sumc else ""),9.3,"123A5E","ctr"))
+    edit_fields.append((cx[1]-0.6,y+rh/2-0.15,1.2,0.30,str(sump),9.3,"123A5E","ctr"))
+    edit_fields.append((cx[2]-0.6,y+rh/2-0.15,1.2,0.30,str(sumc),9.3,"123A5E","ctr"))
     T(cx[3],y+rh/2,kfmt(suma),9.0,NAVY,"bold",ha="center")
     if avg_frac==avg_frac:
         rbox(cx[4]-0.33,y+rh/2-0.105,0.66,0.21,(GREEN if avg_frac>=1 else ORANGE),0.10)
@@ -259,7 +261,7 @@ def redesign_summary(files, slide_num, avg_frac, rows, proy_total, card4=None):
     staffing=read_table_staffing(slide_xml)
     for r in rows:                      # adjuntar Presupuesto y Conectados leidos de la plantilla
         st=staffing.get(r["name"].lower(), {})
-        r["presupuesto"]=st.get("presupuesto"); r["conectados"]=st.get("conectados")
+        r["presupuesto"]=st.get("presupuesto") or "0"; r["conectados"]=st.get("conectados") or "0"
     region=body_region(files, slide_num)
     region_in=(region[2]/EMU, region[3]/EMU)
     n=len(rows); cumple=sum(1 for r in rows if r["logro"] is not None and r["logro"]>=1)
