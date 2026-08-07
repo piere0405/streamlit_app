@@ -219,7 +219,10 @@ def edit_detail(doc, prod, m):
             elif low.startswith("meta:") or low.startswith("meta "):
                 if pd.notna(m["meta_mes"]):           _set(t, f"META: {kfmt(m['meta_mes'])}")
             elif low.startswith("avance:"):           _set(t, f"AVANCE: {kfmt(m['avance'])}")
-            elif PCT_RE.match(s) and pd.notna(logro):  _set(t, fmt_pct(logro))
+            elif PCT_RE.match(s) and pd.notna(logro):  _set(t, fmt_pct(logro)); summary_panel.color_run(t, summary_panel.pct_color(logro*100))
+            elif re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22 and pd.notna(logro):
+                _set(t, summary_panel.estado_text(logro*100)); summary_panel.color_run(t, summary_panel.pct_color(logro*100))
+    if pd.notna(logro): summary_panel.recolor_pill(doc, logro*100)
 
 def edit_summary(doc, metrics):
     shapes = [(sp, *_off(sp), _txt(sp)) for sp in doc.getElementsByTagName("p:sp")]
@@ -318,7 +321,7 @@ def update_presentation(template_bytes, excel_bytes):
                 card4=None
                 if cand:
                     w=min(cand, key=lambda r: r["logro"]); p=w["logro"]*100
-                    acc="#C0392B" if p<80 else "#E08A1E"
+                    acc="#C0392B" if p<90 else "#E08A1E"
                     card4=("A REFORZAR", (f"{p:.0f}%" if p>=100 else f"{p:.1f}%"),
                            f"{w.get('key', w['name'])} · menor logro", acc, acc)
                 summary_panel.redesign_summary(files, num, avg, rows, proy_total, card4)

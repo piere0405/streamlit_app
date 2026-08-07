@@ -108,18 +108,22 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
         ax.text(x,y,s,fontsize=sz,color=c,fontweight=w,ha=ha,va=va,style=st)
 
     top_h=H*0.47
-    # ----- Avance promedio: numero grande + barra (sin dona) -----
+    # ----- Avance promedio: numero grande + barra + estado (umbral) -----
+    def nivel(p):
+        if p>=99.9: return ("Meta alcanzada", GREEN, "#EAF0D2")
+        if p>=90:   return ("Cerca de la meta", ORANGE, "#FBEED6")
+        return ("Bajo la meta", REDC, "#F7DDDA")
+    nv_name, nv_col, nv_bg = nivel(avg_frac*100 if avg_frac==avg_frac else 0)
     hx=0.34
     T(hx,top_h*0.16,"AVANCE PROMEDIO",8.4,GREY,"bold")
-    gcol=GREEN if (avg_frac==avg_frac and avg_frac>=1) else ORANGE
-    T(hx,top_h*0.41,(f"{avg_frac*100:.0f}%" if avg_frac==avg_frac else "-"),41,gcol,"bold",va="center")
+    T(hx,top_h*0.41,(f"{avg_frac*100:.0f}%" if avg_frac==avg_frac else "-"),41,nv_col,"bold",va="center")
     bx=hx; bw=2.02; by=top_h*0.63
     ax.add_patch(FancyBboxPatch((bx,by),bw,0.16,boxstyle="round,pad=0,rounding_size=0.08",fc=BARBG,ec="none",mutation_aspect=1))
     frp=max(0.03,min(1.0,avg_frac if avg_frac==avg_frac else 0))
-    ax.add_patch(FancyBboxPatch((bx,by),bw*frp,0.16,boxstyle="round,pad=0,rounding_size=0.08",fc=gcol,ec="none",mutation_aspect=1))
+    ax.add_patch(FancyBboxPatch((bx,by),bw*frp,0.16,boxstyle="round,pad=0,rounding_size=0.08",fc=nv_col,ec="none",mutation_aspect=1))
     pt=top_h*0.76
-    rbox(hx,pt,1.66,0.27,"#FBEED6",0.13); ax.add_patch(Circle((hx+0.22,pt+0.135),0.062,color=ORANGE))
-    T(hx+0.40,pt+0.135,(ctx.get("status") or "").upper(),8.2,ORANGE,"bold")
+    rbox(hx,pt,2.02,0.27,nv_bg,0.13); ax.add_patch(Circle((hx+0.20,pt+0.135),0.058,color=nv_col))
+    T(hx+0.36,pt+0.135,nv_name,8.2,nv_col,"bold")
     if ctx.get("subtitle"): T(hx,pt+0.45,ctx["subtitle"],7.6,GREY,st="italic")
     ax.add_patch(Rectangle((2.62,0.16),0.013,top_h*0.80,fc="#E1E7EE"))
 
@@ -154,8 +158,8 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     al=["left","center","center","center","center","right"]
     ax.add_patch(FancyBboxPatch((tx,ty),tw,hh,boxstyle="round,pad=0,rounding_size=0.04",fc=NAVY,ec="none",mutation_aspect=1))
     for c,x,a in zip(cols,cx,al): T(x,ty+hh/2,c,9,"white","bold",ha=a)
-    def lc(p): return GREEN if p>=100 else (ORANGE if p>=80 else REDC)
-    def lc_light(p): return "#C4DA6E" if p>=100 else ("#F0BC80" if p>=80 else "#E6A39C")
+    def lc(p): return GREEN if p>=99.9 else (ORANGE if p>=90 else REDC)
+    def lc_light(p): return "#C4DA6E" if p>=99.9 else ("#F0BC80" if p>=90 else "#E6A39C")
     def toint(v):
         try: return int(re.sub(r"[^\d-]","",str(v)))
         except: return 0
@@ -187,7 +191,7 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     edit_fields.append((cx[2]-0.6,y+rh/2-0.15,1.2,0.30,str(sumc),9.3,"123A5E","ctr"))
     T(cx[3],y+rh/2,kfmt(suma),9.0,NAVY,"bold",ha="center")
     if avg_frac==avg_frac:
-        rbox(cx[4]-0.33,y+rh/2-0.105,0.66,0.21,(GREEN if avg_frac>=1 else ORANGE),0.10)
+        rbox(cx[4]-0.33,y+rh/2-0.105,0.66,0.21,(GREEN if (avg_frac==avg_frac and avg_frac>=0.999) else (ORANGE if (avg_frac==avg_frac and avg_frac>=0.90) else REDC)),0.10)
         T(cx[4],y+rh/2,f"{avg_frac*100:.0f}%",8.8,"white","bold",ha="center")
     T(cx[5],y+rh/2,kfmt(sumpr),9.3,NAVY,"bold",ha="right")
     ax.add_patch(FancyBboxPatch((tx,ty),tw,hh+rh*nr,boxstyle="round,pad=0,rounding_size=0.04",fill=False,ec="#D8E0E8",lw=1.1,mutation_aspect=1))
@@ -254,7 +258,73 @@ def insert_text_fields(files, slide_num, region_emu, fields):
         nid+=1
     files[sp]=xml.replace("</p:spTree>","".join(blocks)+"</p:spTree>").encode("utf-8")
 
+def pct_color(p):
+    return "#8CA61E" if p>=99.9 else ("#E08A1E" if p>=90 else "#C0392B")
+def estado_text(p):
+    return "Meta alcanzada" if p>=99.9 else ("Cerca de la meta" if p>=90 else "Bajo la meta")
+_PILL_LIGHT={"#8CA61E":"#EAF0D2","#E08A1E":"#FBEED6","#C0392B":"#F7DDDA"}
+def _set_fill(sp, hexhex):
+    spPr=sp.getElementsByTagName("p:spPr")
+    if not spPr: return
+    for ch in spPr[0].childNodes:
+        if ch.nodeType==1 and ch.tagName=="a:solidFill":
+            clrs=ch.getElementsByTagName("a:srgbClr")
+            if clrs: clrs[0].setAttribute("val",hexhex.lstrip("#"))
+            return
+    doc=sp.ownerDocument; sf=doc.createElement("a:solidFill"); clr=doc.createElement("a:srgbClr")
+    clr.setAttribute("val",hexhex.lstrip("#")); sf.appendChild(clr); spPr[0].appendChild(sf)
+def _set_line(sp, hexhex):
+    spPr=sp.getElementsByTagName("p:spPr")
+    if not spPr: return
+    lns=[c for c in spPr[0].childNodes if c.nodeType==1 and c.tagName=="a:ln"]
+    if not lns: return
+    ln=lns[0]
+    for sf in [c for c in ln.childNodes if c.nodeType==1 and c.tagName in ("a:solidFill","a:noFill")]:
+        ln.removeChild(sf)
+    doc=sp.ownerDocument; sf=doc.createElement("a:solidFill"); clr=doc.createElement("a:srgbClr")
+    clr.setAttribute("val",hexhex.lstrip("#")); sf.appendChild(clr); ln.insertBefore(sf, ln.firstChild)
+def recolor_pill(doc, p):
+    """Pinta el punto (relleno+borde, fuerte) y el fondo (tinte claro) del pill según el umbral."""
+    strong=pct_color(p); light=_PILL_LIGHT[strong]; E=914400
+    for sp in doc.getElementsByTagName("p:sp"):
+        off=sp.getElementsByTagName("a:off")
+        if not off: continue
+        try: x=int(off[0].getAttribute("x"))/E; y=int(off[0].getAttribute("y"))/E
+        except: continue
+        if x>2.85 or not (0.74<=y<=1.12): continue
+        geo=sp.getElementsByTagName("a:prstGeom"); prst=geo[0].getAttribute("prst") if geo else ""
+        txt="".join(t.firstChild.nodeValue for t in sp.getElementsByTagName("a:t") if t.firstChild).strip()
+        if prst=="ellipse": _set_fill(sp, strong); _set_line(sp, strong)
+        elif prst in ("rect","roundRect") and not txt: _set_fill(sp, light)
+def color_run(t, hexhex):
+    """Pinta el color de la fuente del run que contiene el <a:t> t."""
+    r=t.parentNode
+    if r is None: return
+    doc=t.ownerDocument; rpr=None
+    for ch in r.childNodes:
+        if ch.nodeType==1 and ch.tagName=="a:rPr": rpr=ch; break
+    if rpr is None:
+        rpr=doc.createElement("a:rPr"); r.insertBefore(rpr, r.firstChild)
+    for sf in [c for c in rpr.childNodes if c.nodeType==1 and c.tagName=="a:solidFill"]:
+        rpr.removeChild(sf)
+    sf=doc.createElement("a:solidFill"); clr=doc.createElement("a:srgbClr")
+    clr.setAttribute("val", hexhex.lstrip("#")); sf.appendChild(clr)
+    rpr.insertBefore(sf, rpr.firstChild)
+
+def clean_panel(files, slide_num):
+    """Quita panel(es) y campos manuales de una corrida previa (idempotencia)."""
+    sp=f"ppt/slides/slide{slide_num}.xml"
+    if sp not in files: return
+    doc=parseString(files[sp].decode("utf-8")); removed=False
+    for tag in ("p:pic","p:sp"):
+        for el in list(doc.getElementsByTagName(tag)):
+            nv=el.getElementsByTagName("p:cNvPr")
+            if nv and nv[0].getAttribute("name") in ("Panel Resumen","dato_manual"):
+                el.parentNode.removeChild(el); removed=True
+    if removed: files[sp]=doc.toxml().encode("utf-8")
+
 def redesign_summary(files, slide_num, avg_frac, rows, proy_total, card4=None):
+    clean_panel(files, slide_num)   # idempotente: elimina panel previo si el deck ya fue generado
     """rows: [{name, avance(float), logro(float|None), proy(float)}]  avg_frac: fraccion (0-1)."""
     slide_xml=files[f"ppt/slides/slide{slide_num}.xml"].decode()
     ctx=read_context(slide_xml)
@@ -264,7 +334,7 @@ def redesign_summary(files, slide_num, avg_frac, rows, proy_total, card4=None):
         r["presupuesto"]=st.get("presupuesto") or "0"; r["conectados"]=st.get("conectados") or "0"
     region=body_region(files, slide_num)
     region_in=(region[2]/EMU, region[3]/EMU)
-    n=len(rows); cumple=sum(1 for r in rows if r["logro"] is not None and r["logro"]>=1)
+    n=len(rows); cumple=sum(1 for r in rows if r["logro"] is not None and r["logro"]>=0.999)
     png,edit_fields=render_panel(region_in, avg_frac, ctx, f"{cumple} / {n}", proy_total, rows, card4)
     insert_panel(files, slide_num, region, png)
     insert_text_fields(files, slide_num, region, edit_fields)

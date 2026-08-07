@@ -202,42 +202,38 @@ def chart_familia(fam, mes_abbr, size_px, out):
     total = fam.sum() or 1
     names = list(fam.index); vals = list(fam.values)
     colors = [FAMILY_COLORS.get(nm, FALLBACK_COLORS[i % len(FALLBACK_COLORS)]) for i,nm in enumerate(names)]
-    def autopct(p): return f"{p:.1f}%" if p >= 8 else ""
-    wedges,_,_ = ax.pie(vals, colors=colors, startangle=90, counterclock=False,
-                        wedgeprops=dict(width=0.42, edgecolor="white", linewidth=2),
-                        autopct=autopct, pctdistance=0.78,
-                        textprops=dict(color="white", fontsize=13, fontweight="bold"))
-    ax.set_title(f"Participación por FAMILIA CONVENIO - {mes_abbr}",
-                 color="#111", fontsize=15, fontweight="bold", loc="left", pad=16)
-    # leyenda: familias; a las < 8% se les agrega el %
+    wedges = ax.pie(vals, colors=colors, startangle=90, counterclock=False,
+                    wedgeprops=dict(width=0.44, edgecolor="white", linewidth=3))[0]
+    ax.set_title("Participación por Familia",
+                 color="#111", fontsize=15, fontweight="bold", loc="left", pad=10)
     labels = []
     for nm,v in zip(names,vals):
         pct = v/total*100
-        labels.append(f"{nm} ({pct:.1f}%)" if pct < 8 else nm)
-    ax.legend(wedges, labels, title="FAMILIA CONVENIO", loc="center left",
-              bbox_to_anchor=(1.0, 0.5), frameon=False, fontsize=12,
-              title_fontsize=12, labelspacing=0.7)
-    plt.subplots_adjust(left=0.01, right=0.62, top=0.86, bottom=0.04)
+        short = nm if len(nm)<=16 else nm[:15]+"."
+        labels.append(f"{short} ({pct:.1f}%)")
+    ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(1.0, 0.5),
+              frameon=False, fontsize=9.5, labelspacing=0.5, handlelength=1.0, handletextpad=0.35)
+    plt.subplots_adjust(left=0.02, right=0.49, top=0.85, bottom=0.05)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
 def chart_asesores(buckets, size_px, out):
     fig, ax = _fig(size_px)
     cats = ["1","2-3",">=4"]; vals = [buckets[c] for c in cats]
     cols = [AS_BLUE, AS_GREY, AS_GREEN]
-    ax.bar(cats, vals, width=0.62, color=cols, zorder=3)
+    ax.bar(cats, vals, width=0.6, color=cols, zorder=3)
     ymax = max(vals) or 1
-    ax.set_ylim(0, ymax*1.22)
+    ax.set_ylim(0, ymax*1.24)
     for i,v in enumerate(vals):
         ax.text(i, v+ymax*0.02, str(v), ha="center", va="bottom",
-                color=DARK, fontsize=17, fontweight="bold")
-    ax.set_title("Cantidad de Asesores por Rango de Ventas",
-                 color="#25384a", fontsize=15, fontweight="bold", pad=14)
+                color=DARK, fontsize=24, fontweight="bold")
+    ax.set_title("Asesores por Rango de Ventas",
+                 color="#25384a", fontsize=15, fontweight="bold", pad=12)
     ax.set_yticks([])
     for sp in ("top","left","right"): ax.spines[sp].set_visible(False)
     ax.spines["bottom"].set_color("#888")
-    ax.tick_params(axis="x", length=0, labelsize=12)
+    ax.tick_params(axis="x", length=0, labelsize=15)
     for lbl in ax.get_xticklabels(): lbl.set_color("#333")
-    plt.subplots_adjust(left=0.04, right=0.97, top=0.85, bottom=0.10)
+    plt.subplots_adjust(left=0.05, right=0.96, top=0.84, bottom=0.12)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
 
@@ -290,7 +286,10 @@ def edit_detail_text(doc, kpi):
         elif low.startswith("meta:") or low.startswith("meta "):
             if kpi["meta_mes"]:                   _set(t, f"META: {kfmt(kpi['meta_mes'])}")
         elif low.startswith("avance:"):           _set(t, f"AVANCE: {kfmt(kpi['avance'])}")
-        elif PCT_RE.match(s) and pd.notna(lg):    _set(t, fmt_pct(lg))
+        elif PCT_RE.match(s) and pd.notna(lg):    _set(t, fmt_pct(lg)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
+        elif re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22 and pd.notna(lg):
+            _set(t, summary_panel.estado_text(lg*100)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
+    if pd.notna(lg): summary_panel.recolor_pill(doc, lg*100)
 
 def edit_summary(doc, kpis):
     shapes = [(sp,*_off(sp),_txt(sp)) for sp in doc.getElementsByTagName("p:sp")]

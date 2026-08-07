@@ -29,7 +29,7 @@ CIERRE_RE=re.compile(r"cierre\s+\w+\s+\d{4}",re.I)
 DETAILS=[
  ("scotiabank tarjetas","SBP",["OUT"],["TARJETAS"],"FORMALIZADAS","Scotiabank Tarjetas"),
  ("efectiva (dormidos","EFECTIVA",["DORMIDOS","NUEVOS","RECURRENTES"],["PRESTAMOS"],"DESEMBOLSADO","Efectiva (Dor+Nue+Rec)"),
- ("fonocompras","EFECTIVA",["FONOCOMPRAS"],["FONOCOMPRAS"],"FORMALIZADAS","Fonocompras"),
+ ("fonocompras","EFECTIVA",["FONOCOMPRAS"],["FONOCOMPRAS"],"DESEMBOLSADO","Fonocompras"),
  ("banbif prestamos","BANBIF",["NACIONAL"],["PRESTAMOS"],"DESEMBOLSADO","Banbif Préstamos"),
  ("tc telemarketing out","BBVA",["OUT"],["TARJETAS"],"FORMALIZADAS","TC Telemarketing OUT"),
  ("pld out prestamos","BBVA",["OUT"],["PRESTAMOS"],"DESEMBOLSADO","PLD OUT (Préstamos)"),
@@ -173,7 +173,19 @@ def edit_detail_text(doc,kpi):
         elif low.startswith("meta:") or low.startswith("meta "):
             if kpi["meta_mes"]: _set(t,f"META: {kfmt(kpi['meta_mes'])}")
         elif low.startswith("avance:"): _set(t,f"AVANCE: {kfmt(kpi['avance'])}")
-        elif PCT_RE.match(s) and pd.notna(lg): _set(t,fmt_pct(lg))
+        elif PCT_RE.match(s) and pd.notna(lg): _set(t,fmt_pct(lg)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
+        elif re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22 and pd.notna(lg):
+            _set(t, summary_panel.estado_text(lg*100)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
+    if pd.notna(lg): summary_panel.recolor_pill(doc, lg*100)
+
+def _is_donut(img_bytes):
+    """La dona tiene azules saturados (R<110, B>150) de las familias; los asesores no."""
+    try:
+        im=Image.open(io.BytesIO(img_bytes)).convert("RGB").resize((60,60)); px=im.load()
+    except: return False
+    blue=sum(1 for x in range(60) for y in range(60)
+             if px[x,y][0]<110 and px[x,y][2]>150)
+    return blue>120
 
 def _pick_chart(files,sid,slide_imgs,logo):
     """imagen del grafico: la ancha (aspect>=1.85) o la compuesta recortada."""
@@ -230,17 +242,31 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None):
                 plaza=CV._title_plaza(doc)
                 if plaza and plaza in convdf.PLAZA.unique():
                     s=CV.plaza_series(convdf,plaza,convcur); CV.edit_detail_text(doc,s["kpi"]); _fix_dates(doc,mes,year,dia)
-                    files[sf]=doc.toxml().encode("utf-8")
                     fam=CV.plaza_familia(convdf,plaza,convcur); aso=CV.plaza_asesores(convdf,plaza,convcur)
+                    rid2img=dict(re.findall(r'Id="([^"]+)"[^>]*Target="[^"]*media/([^"]+)"', rels))
+                    frames={}
+                    for pic in doc.getElementsByTagName("p:pic"):
+                        b=pic.getElementsByTagName("a:blip"); img=rid2img.get(b[0].getAttribute("r:embed")) if b else None
+                        if not img: continue
+                        xf=pic.getElementsByTagName("a:xfrm")
+                        if not xf: continue
+                        ext=xf[0].getElementsByTagName("a:ext")
+                        if not ext: continue
+                        cx=int(ext[0].getAttribute("cx")); cy=int(ext[0].getAttribute("cy"))
+                        if cy: frames[img]=(cx/EMU, cx/cy)
+                    files[sf]=doc.toxml().encode("utf-8")
                     for im in [i for i in slide_imgs.get(sid,[]) if i!=logo]:
-                        w,h=Image.open(io.BytesIO(files[f"ppt/media/{im}"])).size
-                        asp=CV._frame_aspect(files[sf].decode("utf-8"),rels,im) or (w/h)
-                        if w/h>=1.85:
-                            Wp=2400; buf=io.BytesIO(); CV.chart_avances(s,plaza,(Wp,round(Wp/asp)),buf,dia); files[f"ppt/media/{im}"]=buf.getvalue()
-                        elif h>=600 or w>=950:
-                            Wp=1700; buf=io.BytesIO(); CV.chart_familia(fam,MES_ABBR[month],(Wp,round(Wp/asp)),buf); files[f"ppt/media/{im}"]=buf.getvalue()
-                        else:
-                            Wp=1500; buf=io.BytesIO(); CV.chart_asesores(aso,(Wp,round(Wp/asp)),buf); files[f"ppt/media/{im}"]=buf.getvalue()
+                        if im not in frames: continue
+                        w_in,asp=frames[im]
+                        if asp>=1.85:                                   # Avances del ámbito
+                            buf=io.BytesIO(); CV.chart_avances(s,plaza,(2400,round(2400/asp)),buf,dia)
+                        else:                                            # dona o asesores según CONTENIDO original
+                            Wp=max(600,round(w_in*300)); buf=io.BytesIO()
+                            if _is_donut(files[f"ppt/media/{im}"]):
+                                CV.chart_familia(fam,MES_ABBR[month],(Wp,round(Wp/asp)),buf)
+                            else:
+                                CV.chart_asesores(aso,(Wp,round(Wp/asp)),buf)
+                        files[f"ppt/media/{im}"]=buf.getvalue()
                 else:
                     _fix_dates(doc,mes,year,dia); files[sf]=doc.toxml().encode("utf-8")
                 continue
@@ -299,7 +325,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None):
                 cand=[r for r in rows if r["logro"] is not None]
                 if cand:
                     w=min(cand,key=lambda r:r["logro"]); p=w["logro"]*100
-                    acc="#C0392B" if p<80 else "#E08A1E"
+                    acc="#C0392B" if p<90 else "#E08A1E"
                     short=re.sub(r"\s*\(.*?\)","",w["name"]).strip()[:20]
                     card4=("A REFORZAR",(f"{p:.0f}%" if p>=100 else f"{p:.1f}%"),short,acc,acc)
             summary_panel.redesign_summary(files,num,avg,rows,proy_total,card4)
