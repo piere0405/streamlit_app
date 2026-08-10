@@ -112,10 +112,8 @@ def load_data(excel_bytes):
     if "PLAZA" not in df.columns or not df["PLAZA"].notna().any():
         if "UNIDAD" in df.columns and "TERRITORIO" in df.columns:
             df = group_raw(df)
-    # el deck actual de Convenios es de BBVA -> usar solo esas filas
-    if "UNIDAD" in df.columns and (df["UNIDAD"].astype(str).str.strip().str.upper()=="BBVA").any():
-        df = df[df["UNIDAD"].astype(str).str.strip().str.upper()=="BBVA"].copy()
     df["PLAZA"] = df["PLAZA"].map(_norm)
+    if "UNIDAD" in df.columns: df["UNIDAD"] = df["UNIDAD"].astype(str).str.strip().str.upper()
     dia = DIA_AVANCE
     if "DIA" in df.columns:
         vals = pd.to_numeric(df["DIA"], errors="coerce").dropna()
@@ -123,9 +121,9 @@ def load_data(excel_bytes):
     return df, int(df["PERIODO"].max()), dia
 
 
-def plaza_series(df, plaza, current):
+def plaza_series(df, plaza, current, bank=None):
     """series por periodo para el grafico de avances + KPIs de la plaza."""
-    d = df[df.PLAZA == plaza]
+    d = df[(df.PLAZA == plaza) & ((df.UNIDAD==bank) if (bank and "UNIDAD" in df.columns) else True)]
     periods = sorted(d.PERIODO.unique())
     def m(tipo, per):  # MontoNeto
         return d[(d.TIPO==tipo)&(d.PERIODO==per)]["MONTONETO"].sum()
@@ -146,14 +144,16 @@ def plaza_series(df, plaza, current):
             "cur_idx":cur_idx, "kpi":kpi}
 
 
-def plaza_familia(df, plaza, current):
+def plaza_familia(df, plaza, current, bank=None):
     d = df[(df.PLAZA==plaza)&(df.PERIODO==current)&(df.TIPO=="CIERRE")]
+    if bank and "UNIDAD" in df.columns: d=d[d.UNIDAD==bank]
     fam = d.groupby("FAMILIA_CONVENIO")["MONTONETO"].sum().sort_values(ascending=False)
     return fam[fam > 0]
 
 
-def plaza_asesores(df, plaza, current):
+def plaza_asesores(df, plaza, current, bank=None):
     d = df[(df.PLAZA==plaza)&(df.PERIODO==current)&(df.TIPO=="CIERRE")]
+    if bank and "UNIDAD" in df.columns: d=d[d.UNIDAD==bank]
     ops = d.groupby("DNI_ASESOR_VENTA")["CANTIDAD"].sum()
     return {"1":int((ops==1).sum()), "2-3":int(((ops>=2)&(ops<=3)).sum()), ">=4":int((ops>=4).sum())}
 
@@ -169,15 +169,15 @@ def chart_avances(s, plaza, size_px, out, dia):
     fig, ax = _fig(size_px)
     n = len(s["periods"]); xs = np.arange(n); cur = s["cur_idx"]
     cmax = max(s["cierre"]) or 1; amax = max(s["avance"]) or 1
-    ax.set_ylim(0, cmax*1.42)
-    # barras Monto Avance (banda baja)
-    barh = [a*((cmax*0.34)/amax) for a in s["avance"]]
+    ax.set_ylim(0, cmax*1.52)
+    # barras Monto Avance (banda baja, más corta para no chocar con la línea)
+    barh = [a*((cmax*0.24)/amax) for a in s["avance"]]
     ax.bar(xs, barh, width=0.5, color=BAR_AV, zorder=3)
     for x,h,a,o in zip(xs, barh, s["avance"], s["ops"]):
         ax.text(x-0.07, h+cmax*0.02, fmt_bar(a), ha="center", va="bottom",
-                color="#111", fontsize=17, fontweight="bold")
+                color="#111", fontsize=15, fontweight="bold")
         ax.text(x+0.36, h+cmax*0.02, f"{int(o)}", ha="left", va="bottom",
-                color=RED, fontsize=17, fontweight="bold")
+                color=RED, fontsize=15, fontweight="bold")
     # linea Cierre + proyeccion
     if cur is not None and cur > 0:
         ax.plot(xs[:cur+1], s["cierre"][:cur+1], color=LINE_C, lw=4, zorder=4)
@@ -185,8 +185,8 @@ def chart_avances(s, plaza, size_px, out, dia):
     else:
         ax.plot(xs, s["cierre"], color=LINE_C, lw=4, zorder=4)
     for i,(x,c) in enumerate(zip(xs, s["cierre"])):
-        ax.text(x, c+cmax*0.035, fmt_mm(c), ha="center", va="bottom",
-                color=REDLBL, fontsize=19, fontweight="bold")
+        ax.text(x, c+cmax*0.06, fmt_mm(c), ha="center", va="bottom",
+                color=REDLBL, fontsize=17, fontweight="bold")
     # ticket promedio (fila inferior, con mas separacion de los meses)
     for x,t in zip(xs, s["ticket"]):
         ax.text(x, -cmax*0.22, fmt_ticket(t), ha="center", va="top",
@@ -276,6 +276,25 @@ def _title_plaza(doc):
         tt = _txt(sp).lower()
         if "convenios" in tt and "informaci" in tt:
             return which(tt, TITLE_KW)
+
+def _title_bank_plaza(doc, df):
+    """Devuelve (BANCO, PLAZA) del título de una lámina de convenios, según los datos."""
+    for sp in doc.getElementsByTagName("p:sp"):
+        tt = _txt(sp).lower()
+        if "convenios" in tt and "informaci" in tt:
+            bank=None
+            for b in ("bbva","bcp","sbp"):
+                if b in tt: bank=b.upper(); break
+            if bank is None: return (None,None)
+            if "UNIDAD" in df.columns:
+                plazas=[str(p) for p in df[df.UNIDAD==bank].PLAZA.dropna().unique()]
+            else:
+                plazas=[str(p) for p in df.PLAZA.dropna().unique()]
+            best=None
+            for p in plazas:
+                if p and p.lower() in tt and (best is None or len(p)>len(best)): best=p
+            return (bank, best)
+    return (None,None)
     return which(" ".join(_txt(sp).lower() for sp in doc.getElementsByTagName("p:sp")), TITLE_KW)
 def _frame_aspect(slide_xml, rels_xml, image):
     rid2img = dict(re.findall(r'Id="([^"]+)"[^>]*Target="[^"]*media/([^"]+)"', rels_xml))

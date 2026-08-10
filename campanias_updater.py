@@ -23,10 +23,12 @@ MES_FULL={1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio"
 EMU=914400
 PCT_RE=re.compile(r"^\s*\d+([.,]\d+)?\s*%\s*$")
 DATE_RE=re.compile(r"al\s+\d{1,2}\s+de\s+[A-Za-zÁÉÍÓÚáéíóú]+",re.I)
-CIERRE_RE=re.compile(r"cierre\s+\w+\s+\d{4}",re.I)
+CIERRE_RE=re.compile(r"cierre:?\s+[A-Za-zÁÉÍÓÚáéíóú]+\s+\d{4}",re.I)
+MONTH_RE=re.compile(r"(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Setiembre|Octubre|Noviembre|Diciembre)\s+\d{4}",re.I)
 
 # ===================== CONFIG detalle: (title_kw, unidad, subproductos, productos, titulo_grafico, display) =====================
 DETAILS=[
+ ("sanna","SANNA",["POLIZAS"],["SEGUROS"],"PÓLIZAS","SANNA Pólizas"),
  ("scotiabank tarjetas","SBP",["OUT"],["TARJETAS"],"FORMALIZADAS","Scotiabank Tarjetas"),
  ("efectiva (dormidos","EFECTIVA",["DORMIDOS","NUEVOS","RECURRENTES"],["PRESTAMOS"],"DESEMBOLSADO","Efectiva (Dor+Nue+Rec)"),
  ("fonocompras","EFECTIVA",["FONOCOMPRAS"],["FONOCOMPRAS"],"DESEMBOLSADO","Fonocompras"),
@@ -132,8 +134,9 @@ def _fix_dates(doc,mes,year,dia):
     for t in doc.getElementsByTagName("a:t"):
         if not t.firstChild: continue
         s=t.firstChild.nodeValue
-        if DATE_RE.search(s): _set(t,DATE_RE.sub(f"al {dia} de {mes}",s))
-        elif CIERRE_RE.search(s): _set(t,CIERRE_RE.sub(f"Cierre {mes} {year}",s))
+        if DATE_RE.search(s): _set(t,DATE_RE.sub(f"al {dia} de {mes}",s)); s=t.firstChild.nodeValue
+        if CIERRE_RE.search(s): _set(t,CIERRE_RE.sub(f"Cierre {mes} {year}",s)); s=t.firstChild.nodeValue
+        if MONTH_RE.search(s): _set(t,MONTH_RE.sub(f"{mes} {year}",s))
 def _title_kw_match(doc):
     for sp in doc.getElementsByTagName("p:sp"):
         tt=_txt(sp).lower()
@@ -189,9 +192,9 @@ def _is_donut(img_bytes):
              if px[x,y][0]<110 and px[x,y][2]>150)
     return blue>120
 
-def _pick_chart(files,sid,slide_imgs,logo):
+def _pick_chart(files,sid,slide_imgs,logos):
     """imagen del grafico: la ancha (aspect>=1.85) o la compuesta recortada."""
-    cands=[i for i in slide_imgs.get(sid,[]) if i!=logo]
+    cands=[i for i in slide_imgs.get(sid,[]) if i not in logos]
     wide=[]; comp=[]
     for im in cands:
         try: w,h=Image.open(io.BytesIO(files[f"ppt/media/{im}"])).size
@@ -220,6 +223,10 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
             imgs=re.findall(r"media/(image[0-9]+\.\w+)",files[n].decode("utf-8")); slide_imgs[m.group(1)]=imgs
             for im in imgs: refs[im]+=1
     logo=refs.most_common(1)[0][0] if refs else None
+    # logos = imágenes compartidas por muchas láminas (los charts se usan en 1 sola).
+    # Así, aunque cambie el balance (p.ej. swap de logo a MF), nunca se sobreescribe un logo.
+    LOGOS=set(im for im,c in refs.items() if c>=4)
+    if logo: LOGOS.add(logo)
     warnings=[]
 
     # ordenar por ORDEN DE PRESENTACIÓN (sldIdLst -> rels -> archivo), no por nombre
@@ -260,10 +267,10 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
         cdia = (CV_dia if False else dia)
         if kind=="detail":
             if is_conv and convdf is not None:
-                plaza=CV._title_plaza(doc)
-                if plaza and plaza in convdf.PLAZA.unique():
-                    s=CV.plaza_series(convdf,plaza,convcur); CV.edit_detail_text(doc,s["kpi"]); _fix_dates(doc,mes,year,dia)
-                    fam=CV.plaza_familia(convdf,plaza,convcur); aso=CV.plaza_asesores(convdf,plaza,convcur)
+                bank,plaza=CV._title_bank_plaza(doc, convdf)
+                if bank and plaza and ((convdf.UNIDAD==bank)&(convdf.PLAZA==plaza)).any():
+                    s=CV.plaza_series(convdf,plaza,convcur,bank=bank); CV.edit_detail_text(doc,s["kpi"]); _fix_dates(doc,mes,year,dia)
+                    fam=CV.plaza_familia(convdf,plaza,convcur,bank=bank); aso=CV.plaza_asesores(convdf,plaza,convcur,bank=bank)
                     rid2img=dict(re.findall(r'Id="([^"]+)"[^>]*Target="[^"]*media/([^"]+)"', rels))
                     frames={}
                     for pic in doc.getElementsByTagName("p:pic"):
@@ -276,7 +283,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                         cx=int(ext[0].getAttribute("cx")); cy=int(ext[0].getAttribute("cy"))
                         if cy: frames[img]=(cx/EMU, cx/cy)
                     files[sf]=doc.toxml().encode("utf-8")
-                    for im in [i for i in slide_imgs.get(sid,[]) if i!=logo]:
+                    for im in [i for i in slide_imgs.get(sid,[]) if i not in LOGOS]:
                         if im not in frames: continue
                         w_in,asp=frames[im]
                         if asp>=1.85:                                   # Avances del ámbito
@@ -297,7 +304,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
             kw,unidad,subs,prods,ctitle,disp=DETAILS[idx]
             s=series(df,unidad,subs,prods,current)
             edit_detail_text(doc,s["kpi"]); _fix_dates(doc,mes,year,dia)
-            im=_pick_chart(files,sid,slide_imgs,logo)
+            im=_pick_chart(files,sid,slide_imgs,LOGOS)
             if im and s["has_data"]:
                 _strip_srcrect(doc,rels,im)
             files[sf]=doc.toxml().encode("utf-8")
@@ -323,12 +330,13 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
     for sf,sid,num,kind,is_conv,doc,grp in order:
         if kind!="resumen": continue
         if is_conv and convdf is not None:
-            disp={"LIMA":"BBVA Conv. Lima","TELECAMPO":"BBVA Conv. Telecampo","NORTE":"BBVA Conv. Norte","SUR":"BBVA Conv. Sur","ORIENTE":"BBVA Conv. Oriente"}
+            tt=" ".join(t.firstChild.nodeValue for t in doc.getElementsByTagName("a:t") if t.firstChild).lower()
+            bank=next((b.upper() for b in ("bbva","bcp","sbp") if b in tt), "BBVA")
+            dfb=convdf[convdf.UNIDAD==bank] if "UNIDAD" in convdf.columns else convdf
             rows=[]; logros=[]; pt=0.0
-            for key,_,_ in CV.PLAZAS:
-                if key not in convdf.PLAZA.unique(): continue
-                k=CV.plaza_series(convdf,key,convcur)["kpi"]; lg=k["logro"]
-                rows.append({"name":disp.get(key,key.title()),"avance":k["avance"],"logro":(float(lg) if pd.notna(lg) else None),"proy":k["proyeccion"]})
+            for key in sorted(dfb.PLAZA.dropna().unique()):
+                k=CV.plaza_series(convdf,key,convcur,bank=bank)["kpi"]; lg=k["logro"]
+                rows.append({"name":str(key).title(),"avance":k["avance"],"logro":(float(lg) if pd.notna(lg) else None),"proy":k["proyeccion"]})
                 if pd.notna(lg): logros.append(lg)
                 pt+=k["proyeccion"]
             avg=float(np.mean(logros)) if logros else float("nan")
@@ -350,6 +358,13 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                     short=re.sub(r"\s*\(.*?\)","",w["name"]).strip()[:20]
                     card4=("A REFORZAR",(f"{p:.0f}%" if p>=100 else f"{p:.1f}%"),short,acc,acc)
             summary_panel.redesign_summary(files,num,avg,rows,proy_total,card4)
+
+    # pasada final: fechas -> mes/día en TODAS las láminas (portadas, diags, etc.)
+    for n in list(files):
+        if not re.match(r"ppt/slides/slide\d+\.xml$", n): continue
+        xml=files[n].decode("utf-8")
+        if not (DATE_RE.search(xml) or CIERRE_RE.search(xml)): continue
+        d2=parseString(xml); _fix_dates(d2,mes,year,dia); files[n]=d2.toxml().encode("utf-8")
 
     out=io.BytesIO()
     with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as z:
