@@ -25,7 +25,12 @@ if st.button("Generar presentación consolidada", type="primary", disabled=not r
     try:
         with st.spinner("Actualizando todas las unidades…"):
             tpl=open(os.path.join(BASE,"plantilla_campanias.pptx"),"rb").read()
-            pptx,res,warns=campanias_updater.update_presentation(tpl, f_camp.read(), f_conv.read(), dia_override=int(dia_corte))
+            cb=f_camp.read(); vb=f_conv.read()
+            try:
+                pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb, dia_override=int(dia_corte))
+            except TypeError:
+                st.warning("El motor desplegado es una versión anterior (sin 'día de corte'). Sube el campanias_updater.py más reciente y reinicia la app.")
+                pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb)
         st.success(f"Presentación lista · Periodo {res['mes']} (al día {res['dia']}).")
         for w in warns: st.warning(w)
         st.download_button("⬇  Descargar PowerPoint", pptx, file_name=f"campanias_{res['periodo']}.pptx", mime=MIME, type="primary", use_container_width=True)
