@@ -284,8 +284,8 @@ def _set_line(sp, hexhex):
     doc=sp.ownerDocument; sf=doc.createElement("a:solidFill"); clr=doc.createElement("a:srgbClr")
     clr.setAttribute("val",hexhex.lstrip("#")); sf.appendChild(clr); ln.insertBefore(sf, ln.firstChild)
 def recolor_pill(doc, p):
-    """Pinta el punto (relleno+borde, fuerte) y el fondo (tinte claro) del pill según el umbral."""
-    strong=pct_color(p); light=_PILL_LIGHT[strong]; E=914400
+    """Pinta el pill según el umbral: punto (fuerte), fondo (claro) y TEXTO (fuerte)."""
+    strong=pct_color(p).lstrip("#"); light=_PILL_LIGHT[pct_color(p)].lstrip("#"); E=914400
     for sp in doc.getElementsByTagName("p:sp"):
         off=sp.getElementsByTagName("a:off")
         if not off: continue
@@ -294,8 +294,14 @@ def recolor_pill(doc, p):
         if x>2.85 or not (0.74<=y<=1.12): continue
         geo=sp.getElementsByTagName("a:prstGeom"); prst=geo[0].getAttribute("prst") if geo else ""
         txt="".join(t.firstChild.nodeValue for t in sp.getElementsByTagName("a:t") if t.firstChild).strip()
-        if prst=="ellipse": _set_fill(sp, strong); _set_line(sp, strong)
-        elif prst in ("rect","roundRect") and not txt: _set_fill(sp, light)
+        spPr=sp.getElementsByTagName("p:spPr")
+        if prst=="ellipse":                                   # punto -> fuerte (relleno+borde+gradientes)
+            for c in (spPr[0].getElementsByTagName("a:srgbClr") if spPr else []): c.setAttribute("val",strong)
+        elif prst in ("rect","roundRect") and not txt:        # fondo -> claro (todos los colores)
+            for c in (spPr[0].getElementsByTagName("a:srgbClr") if spPr else []): c.setAttribute("val",light)
+        elif prst in ("rect","roundRect") and txt:            # texto del pill -> fuerte
+            for t in sp.getElementsByTagName("a:t"):
+                if t.firstChild: color_run(t, "#"+strong)
 def color_run(t, hexhex):
     """Pinta el color de la fuente del run que contiene el <a:t> t."""
     r=t.parentNode

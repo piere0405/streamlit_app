@@ -45,7 +45,6 @@ DETAILS=[
  ("extracash","UNICEF",["EXTRACASH"],["RETENCIONES"],"RETENCIONES","Extracash"),
  ("fidelizacion","UNICEF",["FIDELIZACION"],["RETENCIONES"],"RETENCIONES","Fidelización"),
  ("saving","UNICEF",["SAVING"],["RETENCIONES"],"RETENCIONES","Saving"),
- ("upgrade circulo","UNICEF",["UPGRADE CIRCULO"],["RETENCIONES"],"RETENCIONES","Upgrade Círculo"),
  ("upgrade linea","UNICEF",["UPGRADE LINEA"],["RETENCIONES"],"RETENCIONES","Upgrade Línea"),
 ]
 # ================================================================================================================
@@ -81,13 +80,15 @@ def series(df,unidad,subs,prods,current):
     periods=sorted(d.PERIODO.unique())
     def m(tipo,per): return d[(d.TIPO==tipo)&(d.PERIODO==per)]["MONTO"].sum()
     avance=[m("AVANCE",p) for p in periods]
-    cierre=[(m("PROYECCION",p) if p==current else m("CIERRE",p)) for p in periods]
+    pr_cur=m("PROYECCION",current); has_proj=pr_cur>0
+    cierre=[(pr_cur if (p==current and has_proj) else m("CIERRE",p)) for p in periods]
     cur=periods.index(current) if current in periods else None
     av=m("AVANCE",current); ma=m("META_AVANCE",current)
-    kpi={"avance":av,"meta_avance":ma,"meta_mes":m("META_MES",current),"proyeccion":m("PROYECCION",current),
+    kpi={"avance":av,"meta_avance":ma,"meta_mes":m("META_MES",current),
+         "proyeccion":(pr_cur if has_proj else m("CIERRE",current)),
          "logro":(av/ma if ma else np.nan)}
     return {"periods":periods,"labels":[MES_ABBR[int(str(p)[4:6])] for p in periods],
-            "avance":avance,"cierre":cierre,"cur":cur,"kpi":kpi,"has_data":len(periods)>0}
+            "avance":avance,"cierre":cierre,"cur":cur,"kpi":kpi,"proj":has_proj,"has_data":len(periods)>0}
 
 def build_chart_series(s,title,size_px,out):
     labels,avance,cierre,cur=s["labels"],s["avance"],s["cierre"],s["cur"]
@@ -98,14 +99,15 @@ def build_chart_series(s,title,size_px,out):
     bcol=[CYAN if (cur is not None and i==cur) else TEAL for i in range(n)]
     ax.bar(xs,barh,width=0.42,color=bcol,zorder=3)
     for x,h,a in zip(xs,barh,avance): ax.text(x,h+cmax*0.02,kfmt(a),ha="center",va="bottom",color=SLATE,fontsize=40,fontweight="bold")
-    if cur is not None and cur>0:
+    proj=s.get("proj",True)
+    if cur is not None and cur>0 and proj:
         ax.plot(xs[:cur+1],cierre[:cur+1],color=NAVY,lw=6,solid_capstyle="round",zorder=4)
         ax.plot(xs[cur-1:cur+1],cierre[cur-1:cur+1],color=NAVY_L,lw=6,ls=(0,(4,3)),zorder=5)
         ax.plot(xs[:cur],cierre[:cur],"o",color=NAVY,ms=11,zorder=6); ax.plot([xs[cur]],[cierre[cur]],"o",color=NAVY_L,ms=11,zorder=6)
     elif n>0:
-        ax.plot(xs,cierre,color=NAVY,lw=6,marker="o",ms=11,zorder=4)
+        ax.plot(xs,cierre,color=NAVY,lw=6,marker="o",ms=11,solid_capstyle="round",zorder=4)
     for i,(x,c) in enumerate(zip(xs,cierre)):
-        col=NAVY_L if (cur is not None and i==cur) else NAVY
+        col=(NAVY_L if (cur is not None and i==cur and proj) else NAVY)
         ax.text(x,c+cmax*0.035,kfmt(c),ha="center",va="bottom",color=col,fontsize=42,fontweight="bold")
     ax.set_xticks(xs); ax.set_xticklabels(labels,color=GRAY,fontsize=42,fontweight="bold")
     ax.tick_params(axis="x",length=0,pad=14); ax.set_yticks([])
@@ -174,7 +176,7 @@ def edit_detail_text(doc,kpi):
             if kpi["meta_mes"]: _set(t,f"META: {kfmt(kpi['meta_mes'])}")
         elif low.startswith("avance:"): _set(t,f"AVANCE: {kfmt(kpi['avance'])}")
         elif PCT_RE.match(s) and pd.notna(lg): _set(t,fmt_pct(lg)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
-        elif re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22 and pd.notna(lg):
+        elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada")) and pd.notna(lg):
             _set(t, summary_panel.estado_text(lg*100)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
     if pd.notna(lg): summary_panel.recolor_pill(doc, lg*100)
 
@@ -200,8 +202,11 @@ def _pick_chart(files,sid,slide_imgs,logo):
     if comp: return comp[0][0]
     return None
 
-def update_presentation(template_bytes, camp_excel, conv_excel=None):
+def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_override=None):
     df,current,dia=load(camp_excel)
+    if dia_override:  # día de corte elegido en la app -> todas las fechas "avance hasta el día X"
+        try: dia=int(dia_override)
+        except: pass
     year,month=int(str(current)[:4]),int(str(current)[4:6]); mes=MES_FULL[month]
     convdf=convcur=None
     if conv_excel is not None:
@@ -217,7 +222,23 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None):
     logo=refs.most_common(1)[0][0] if refs else None
     warnings=[]
 
-    slide_files=sorted([n for n in files if re.match(r"ppt/slides/slide\d+\.xml$",n)],
+    # ordenar por ORDEN DE PRESENTACIÓN (sldIdLst -> rels -> archivo), no por nombre
+    def _present_order():
+        try:
+            pres=files["ppt/presentation.xml"].decode("utf-8")
+            prels=files["ppt/_rels/presentation.xml.rels"].decode("utf-8")
+            rid2t=dict(re.findall(r'Id="([^"]+)"[^>]*Target="([^"]+)"', prels))
+            ids=re.findall(r'<p:sldId[^>]*r:id="([^"]+)"', pres)
+            out=[]
+            for rid in ids:
+                tgt=rid2t.get(rid,"")
+                nm=tgt.split("/")[-1]
+                p=f"ppt/slides/{nm}"
+                if p in files: out.append(p)
+            return out
+        except Exception:
+            return []
+    slide_files=_present_order() or sorted([n for n in files if re.match(r"ppt/slides/slide\d+\.xml$",n)],
                        key=lambda x:int(re.findall(r"\d+",x.split("/")[-1])[0]))
     # pass 1: clasificar y guardar kpis de detalle por resumen
     order=[]; groups={}; cur_group=None
@@ -227,13 +248,13 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None):
         is_conv=("convenios" in low)
         if "resumen general" in low:
             cur_group=num; groups[num]={"conv":is_conv,"rows":[]}
-            order.append((sf,sid,num,"resumen",is_conv,doc)); continue
+            order.append((sf,sid,num,"resumen",is_conv,doc,cur_group)); continue
         if "meta avance" in low:
-            order.append((sf,sid,num,"detail",is_conv,doc)); continue
-        order.append((sf,sid,num,"other",is_conv,doc))
+            order.append((sf,sid,num,"detail",is_conv,doc,cur_group)); continue
+        order.append((sf,sid,num,"other",is_conv,doc,cur_group))
 
     # pass 2: procesar
-    for sf,sid,num,kind,is_conv,doc in order:
+    for sf,sid,num,kind,is_conv,doc,grp in order:
         rels=files.get(f"ppt/slides/_rels/{sid}.xml.rels",b"").decode("utf-8")
         # fechas siempre
         cdia = (CV_dia if False else dia)
@@ -287,9 +308,9 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None):
                 files[f"ppt/media/{im}"]=buf.getvalue()
                 if px[0]/px[1]<1.6:
                     warnings.append(f"{disp}: imagen compuesta (panel KPIs no está en el Excel); se regeneró solo el gráfico principal.")
-            # registrar en el grupo/resumen
-            if cur_group_for(num,groups) is not None:
-                g=groups[cur_group_for(num,groups)]
+            # registrar en el grupo/resumen (por orden de presentación)
+            if grp is not None and grp in groups:
+                g=groups[grp]
                 if not g["conv"]:
                     lg=s["kpi"]["logro"]
                     g["rows"].append({"name":disp,"key":disp,"avance":s["kpi"]["avance"],
@@ -299,7 +320,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None):
             _fix_dates(doc,mes,year,dia); files[sf]=doc.toxml().encode("utf-8")
 
     # pass 3: resúmenes
-    for sf,sid,num,kind,is_conv,doc in order:
+    for sf,sid,num,kind,is_conv,doc,grp in order:
         if kind!="resumen": continue
         if is_conv and convdf is not None:
             disp={"LIMA":"BBVA Conv. Lima","TELECAMPO":"BBVA Conv. Telecampo","NORTE":"BBVA Conv. Norte","SUR":"BBVA Conv. Sur","ORIENTE":"BBVA Conv. Oriente"}

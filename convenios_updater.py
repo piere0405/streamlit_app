@@ -287,7 +287,7 @@ def edit_detail_text(doc, kpi):
             if kpi["meta_mes"]:                   _set(t, f"META: {kfmt(kpi['meta_mes'])}")
         elif low.startswith("avance:"):           _set(t, f"AVANCE: {kfmt(kpi['avance'])}")
         elif PCT_RE.match(s) and pd.notna(lg):    _set(t, fmt_pct(lg)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
-        elif re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22 and pd.notna(lg):
+        elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada")) and pd.notna(lg):
             _set(t, summary_panel.estado_text(lg*100)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
     if pd.notna(lg): summary_panel.recolor_pill(doc, lg*100)
 
@@ -411,3 +411,26 @@ def update_presentation(template_bytes, excel_bytes):
                             "proyeccion":kfmt(k["proyeccion"]) if k["proyeccion"] else "-"}
                          for p,k in kpis.items()}}
     return out.getvalue(), resumen, warnings
+# ===== Agrupación automática Convenios (banco + territorio -> plaza) =====
+TERRITORIO_A_PLAZA = {
+ "BBVA": {"APURIMAC":"Sur","AREQUIPA":"Sur","CAJAMARCA":"Norte","CALL":"TELECAMPO","CHICLAYO":"Norte",
+          "HUANUCO":"Centro","HUARAZ":"Norte","ICA":"Sur","IQUITOS":"Oriente","LIMA":"LIMA",
+          "PUCALLPA":"Oriente","PUNO":"Sur","TACNA":"Sur","TARAPOTO":"Oriente","TRUJILLO":"Norte"},
+ "BCP":  {"AREQUIPA":"Sur/Oriente","CAJAMARCA":"Norte I","CHICLAYO":"Norte II","CHIMBOTE":"Norte I",
+          "IQUITOS":"Sur/Oriente","LIMA":"LIMA","PIURA":"Norte II","PUNO":"Sur/Oriente",
+          "TELECAMPO":"TELECAMPO","TRUJILLO":"Norte I"},
+ "SBP":  {"CAJAMARCA":"Norte","CHICLAYO":"Norte","HUANCAYO":"COA","ICA":"SUR","IQUITOS":"COA",
+          "LIMACAMPO":"LIMA","PUCALLPA":"COA","TELECAMPO":"TELECAMPO","TRUJILLO":"Norte"},
+}
+def group_raw(df):
+    """Agrega la columna PLAZA a partir de (UNIDAD/banco, TERRITORIO) usando el mapeo. No pisa PLAZA existente."""
+    import pandas as _pd
+    if "PLAZA" in df.columns and df["PLAZA"].notna().any():
+        return df
+    def _p(r):
+        b=str(r.get("UNIDAD","")).strip().upper(); t=str(r.get("TERRITORIO","")).strip().upper()
+        return TERRITORIO_A_PLAZA.get(b,{}).get(t)
+    df=df.copy(); df["PLAZA"]=df.apply(_p,axis=1)
+    return df
+# ========================================================================
+
