@@ -86,23 +86,36 @@ def _norm(s): return str(s).strip().upper()
 # ---------- datos ----------
 def load_data(excel_bytes):
     xls = pd.ExcelFile(io.BytesIO(excel_bytes))
-    need = {"PLAZA","PERIODO","TIPO","MONTONETO","CANTIDAD","FAMILIA_CONVENIO","DNI_ASESOR_VENTA"}
     df = None
     for sh in xls.sheet_names:
         t = xls.parse(sh)
-        cols = {c: re.sub(r"\s+","",str(c).strip().upper()) for c in t.columns}
-        t = t.rename(columns=cols)
-        if {"PLAZA","PERIODO","TIPO","MONTONETO"}.issubset(t.columns):
+        t = t.rename(columns={c: re.sub(r"\s+","",str(c).strip().upper()) for c in t.columns})
+        cols = set(t.columns)
+        # esquema NUEVO (crudo): UNIDAD/TERRITORIO/FAMILIA_CONVENIO/PERIODO/TIPO/MONTO
+        # o esquema ANTIGUO: PLAZA/PERIODO/TIPO/MONTONETO
+        if {"PERIODO","TIPO","MONTO","FAMILIA_CONVENIO"}.issubset(cols) or \
+           {"PLAZA","PERIODO","TIPO","MONTONETO"}.issubset(cols):
             df = t; break
     if df is None:
-        raise ValueError("No encontre una hoja con columnas PLAZA, PERIODO, TIPO, MontoNeto.")
-    df["PLAZA"] = df["PLAZA"].map(_norm)
+        raise ValueError("No encontré la hoja de Convenios (esperaba TERRITORIO/FAMILIA_CONVENIO/PERIODO/TIPO/MONTO, "
+                         "o el esquema antiguo PLAZA/PERIODO/TIPO/MONTONETO).")
+    # normalizar nombres del esquema nuevo a los internos
+    if "MONTONETO" not in df.columns and "MONTO" in df.columns:
+        df = df.rename(columns={"MONTO":"MONTONETO"})
+    if "DNI_ASESOR_VENTA" not in df.columns and "ID_EJECUTIVO" in df.columns:
+        df = df.rename(columns={"ID_EJECUTIVO":"DNI_ASESOR_VENTA"})
     df["TIPO"]  = df["TIPO"].map(lambda x: _norm(x).replace(" ","_"))
-    df = df[df["PERIODO"].notna()]
-    df["PERIODO"] = df["PERIODO"].astype(int)
+    df = df[df["PERIODO"].notna()]; df["PERIODO"] = df["PERIODO"].astype(int)
     for c in ("MONTONETO","CANTIDAD"):
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    # dia: de la columna DIA si existe, si no el valor por defecto
+    # agrupar automáticamente (banco+territorio -> plaza) si viene el crudo
+    if "PLAZA" not in df.columns or not df["PLAZA"].notna().any():
+        if "UNIDAD" in df.columns and "TERRITORIO" in df.columns:
+            df = group_raw(df)
+    # el deck actual de Convenios es de BBVA -> usar solo esas filas
+    if "UNIDAD" in df.columns and (df["UNIDAD"].astype(str).str.strip().str.upper()=="BBVA").any():
+        df = df[df["UNIDAD"].astype(str).str.strip().str.upper()=="BBVA"].copy()
+    df["PLAZA"] = df["PLAZA"].map(_norm)
     dia = DIA_AVANCE
     if "DIA" in df.columns:
         vals = pd.to_numeric(df["DIA"], errors="coerce").dropna()
