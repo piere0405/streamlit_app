@@ -168,6 +168,12 @@ def _fig(size_px, dpi=150):
 def chart_avances(s, plaza, size_px, out, dia):
     fig, ax = _fig(size_px)
     n = len(s["periods"]); xs = np.arange(n); cur = s["cur_idx"]
+    if n == 0:                       # sin periodos -> lienzo vacio, nunca reventar
+        ax.axis("off")
+        ax.text(0.5, 0.5, "Sin información", transform=ax.transAxes,
+                ha="center", va="center", color="#8A97A4", fontsize=16, fontweight="bold")
+        fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
+        return
     cmax = max(s["cierre"]) or 1; amax = max(s["avance"]) or 1
     ax.set_ylim(0, cmax*1.52)
     # barras Monto Avance (banda baja, más corta para no chocar con la línea)
@@ -210,10 +216,43 @@ def chart_avances(s, plaza, size_px, out, dia):
     plt.subplots_adjust(left=0.02, right=0.98, top=0.83, bottom=0.28)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
+def _donut_vacio(ax, size_px=None):
+    """Dona gris de 'sin informacion' cuando no hay datos que graficar."""
+    ax.pie([1.0], colors=["#E3E7EB"], startangle=90, counterclock=False,
+           wedgeprops=dict(width=0.44, edgecolor="white", linewidth=3))
+    ax.text(0, 0, "Sin\ninformación", ha="center", va="center",
+            color="#8A97A4", fontsize=11, fontweight="bold")
+
+
 def chart_familia(fam, mes_abbr, size_px, out):
     fig, ax = _fig(size_px)
-    total = fam.sum() or 1
-    names = list(fam.index); vals = list(fam.values)
+    # --- saneamiento: quitar NaN/negativos y quedarnos solo con valores > 0 ---
+    names, vals = [], []
+    try:
+        pares = list(zip(list(fam.index), list(fam.values)))
+    except Exception:
+        pares = []
+    for nm, v in pares:
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            continue
+        if v != v or v <= 0:          # NaN o no positivo
+            continue
+        names.append(nm); vals.append(v)
+
+    total = sum(vals)
+    # matplotlib >= 3.11 lanza ValueError('All wedge sizes are zero') si la
+    # lista esta vacia o suma cero -> dibujamos una dona vacia y salimos.
+    if not vals or total <= 0:
+        _donut_vacio(ax)
+        ax.set_title("Participación por Familia",
+                     color="#111", fontsize=15, fontweight="bold", loc="left", pad=10)
+        ax.axis("equal")
+        plt.subplots_adjust(left=0.02, right=0.49, top=0.85, bottom=0.05)
+        fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
+        return
+
     colors = [FAMILY_COLORS.get(nm, FALLBACK_COLORS[i % len(FALLBACK_COLORS)]) for i,nm in enumerate(names)]
     wedges = ax.pie(vals, colors=colors, startangle=90, counterclock=False,
                     wedgeprops=dict(width=0.44, edgecolor="white", linewidth=3))[0]

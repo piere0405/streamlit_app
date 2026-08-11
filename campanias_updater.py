@@ -286,15 +286,18 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                     for im in [i for i in slide_imgs.get(sid,[]) if i not in LOGOS]:
                         if im not in frames: continue
                         w_in,asp=frames[im]
-                        if asp>=1.85:                                   # Avances del ámbito
-                            buf=io.BytesIO(); CV.chart_avances(s,plaza,(2400,round(2400/asp)),buf,dia)
-                        else:                                            # dona o asesores según CONTENIDO original
-                            Wp=max(600,round(w_in*300)); buf=io.BytesIO()
-                            if _is_donut(files[f"ppt/media/{im}"]):
-                                CV.chart_familia(fam,MES_ABBR[month],(Wp,round(Wp/asp)),buf)
-                            else:
-                                CV.chart_asesores(aso,(Wp,round(Wp/asp)),buf)
-                        files[f"ppt/media/{im}"]=buf.getvalue()
+                        try:
+                            if asp>=1.85:                                   # Avances del ámbito
+                                buf=io.BytesIO(); CV.chart_avances(s,plaza,(2400,round(2400/asp)),buf,dia)
+                            else:                                            # dona o asesores según CONTENIDO original
+                                Wp=max(600,round(w_in*300)); buf=io.BytesIO()
+                                if _is_donut(files[f"ppt/media/{im}"]):
+                                    CV.chart_familia(fam,MES_ABBR[month],(Wp,round(Wp/asp)),buf)
+                                else:
+                                    CV.chart_asesores(aso,(Wp,round(Wp/asp)),buf)
+                            files[f"ppt/media/{im}"]=buf.getvalue()
+                        except Exception as _e:
+                            warnings.append(f"{bank} · {plaza}: no se pudo regenerar un gráfico ({type(_e).__name__}: {_e}); se conservó la imagen original.")
                 else:
                     _fix_dates(doc,mes,year,dia); files[sf]=doc.toxml().encode("utf-8")
                 continue
