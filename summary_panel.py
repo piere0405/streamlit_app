@@ -280,11 +280,7 @@ def insert_text_fields(files, slide_num, region_emu, fields):
 def pct_color(p):
     return "#8CA61E" if p>=99.9 else ("#E08A1E" if p>=90 else "#C0392B")
 def estado_text(p):
-<<<<<<< HEAD
     return "META ALCANZADA" if p>=99.9 else ("CERCA DE LA META" if p>=90 else "BAJO META")
-=======
-    return "META ALCANZADA" if p>=99.9 else ("CERCA DE META" if p>=90 else "BAJO META")
->>>>>>> 748bdb6fbd326d4cbcec2082307cc2ced7d63120
 _PILL_LIGHT={"#8CA61E":"#EAF0D2","#E08A1E":"#FBEED6","#C0392B":"#F7DDDA"}
 def _set_fill(sp, hexhex):
     spPr=sp.getElementsByTagName("p:spPr")
@@ -307,7 +303,6 @@ def _set_line(sp, hexhex):
     doc=sp.ownerDocument; sf=doc.createElement("a:solidFill"); clr=doc.createElement("a:srgbClr")
     clr.setAttribute("val",hexhex.lstrip("#")); sf.appendChild(clr); ln.insertBefore(sf, ln.firstChild)
 def recolor_pill(doc, p):
-<<<<<<< HEAD
     """Pinta el pill de estado (top-left) para que TODO coincida con el % grande:
     punto y texto en color fuerte, fondo en color claro, y el texto = ESTADO
     (BAJO META / CERCA DE LA META / META ALCANZADA). Se ancla al punto (elipse)
@@ -361,34 +356,6 @@ def recolor_pill(doc, p):
             a_ts[0].firstChild.nodeValue=est
             for t in a_ts[1:]: t.firstChild.nodeValue=""
             for t in a_ts: color_run(t, strong)
-=======
-    """Pinta el pill top-left según el umbral: punto (fuerte), fondo (claro) y texto (fuerte),
-    para que COINCIDA con el color del % grande. Preserva el contenido 'META: ...'; solo
-    reemplaza el texto en pills de estado (bajo/cerca/meta alcanzada)."""
-    strong=pct_color(p).lstrip("#"); light=_PILL_LIGHT[pct_color(p)].lstrip("#"); E=914400
-    for sp in doc.getElementsByTagName("p:sp"):
-        off=sp.getElementsByTagName("a:off"); ext=sp.getElementsByTagName("a:ext")
-        if not off: continue
-        try:
-            x=int(off[0].getAttribute("x"))/E; y=int(off[0].getAttribute("y"))/E
-            w=(int(ext[0].getAttribute("cx"))/E) if ext else 0.0
-        except: continue
-        if x>2.85 or not (0.74<=y<=1.55) or w>5.0: continue     # pill top-left; excluye barras full-width
-        geo=sp.getElementsByTagName("a:prstGeom"); prst=geo[0].getAttribute("prst") if geo else ""
-        txt="".join(t.firstChild.nodeValue for t in sp.getElementsByTagName("a:t") if t.firstChild).strip()
-        spPr=sp.getElementsByTagName("p:spPr")
-        if prst=="ellipse":                                     # punto -> fuerte
-            for c in (spPr[0].getElementsByTagName("a:srgbClr") if spPr else []): c.setAttribute("val",strong)
-        elif prst in ("rect","roundRect") and not txt:          # fondo -> claro
-            for c in (spPr[0].getElementsByTagName("a:srgbClr") if spPr else []): c.setAttribute("val",light)
-        elif prst in ("rect","roundRect") and txt:              # texto del pill
-            a_ts=[t for t in sp.getElementsByTagName("a:t") if t.firstChild]
-            if txt.lower().startswith(("bajo","cerca","meta alcanzada","en ")):   # pill de ESTADO -> reemplaza
-                if a_ts:
-                    a_ts[0].firstChild.nodeValue=estado_text(p)
-                    for t in a_ts[1:]: t.firstChild.nodeValue=""
-            for t in a_ts: color_run(t, "#"+strong)             # recolorea fuente (preserva 'META: ...')
->>>>>>> 748bdb6fbd326d4cbcec2082307cc2ced7d63120
 def color_run(t, hexhex):
     """Pinta el color de la fuente del run que contiene el <a:t> t."""
     r=t.parentNode
