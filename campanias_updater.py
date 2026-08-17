@@ -328,7 +328,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                     g["rows"].append({"name":disp,"key":disp,"avance":s["kpi"]["avance"],
                                       "logro":(float(lg) if pd.notna(lg) else None),
                                       "proy":(s["kpi"]["proyeccion"] if pd.notna(s["kpi"]["proyeccion"]) else 0),
-                                      "meta_avance":s["kpi"]["meta_avance"]})
+                                      "meta_avance":s["kpi"]["meta_avance"], "meta_mes":s["kpi"]["meta_mes"]})
         else:
             _fix_dates(doc,mes,year,dia); files[sf]=doc.toxml().encode("utf-8")
 
@@ -342,7 +342,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
             rows=[]; logros=[]; pt=0.0
             for key in sorted(dfb.PLAZA.dropna().unique()):
                 k=CV.plaza_series(convdf,key,convcur,bank=bank)["kpi"]; lg=k["logro"]
-                rows.append({"name":str(key).title(),"avance":k["avance"],"logro":(float(lg) if pd.notna(lg) else None),"proy":k["proyeccion"],"meta_avance":k["meta_avance"]})
+                rows.append({"name":str(key).title(),"avance":k["avance"],"logro":(float(lg) if pd.notna(lg) else None),"proy":k["proyeccion"],"meta_avance":k["meta_avance"],"meta_mes":k["meta_mes"]})
                 if pd.notna(lg): logros.append(lg)
                 pt+=k["proyeccion"]
             avg=summary_panel.agg_frac(rows)   # % agregado (avance/meta)

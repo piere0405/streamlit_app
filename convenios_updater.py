@@ -448,7 +448,7 @@ def update_presentation(template_bytes, excel_bytes):
                 k=kpis[key]; lg=k["logro"]
                 rows.append({"name":disp.get(key,key.title()), "avance":k["avance"],
                              "logro":(float(lg) if pd.notna(lg) else None), "proy":k["proyeccion"],
-                             "meta_avance":k["meta_avance"]})
+                             "meta_avance":k["meta_avance"], "meta_mes":k["meta_mes"]})
                 if pd.notna(lg): logros.append(lg)
                 proy_total += k["proyeccion"]
             avg = summary_panel.agg_frac(rows)   # % agregado (avance/meta), coincide con GENERAL

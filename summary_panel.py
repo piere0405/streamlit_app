@@ -172,9 +172,9 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     # ----- TABLA (con fila TOTAL) -----
     tx=0.20; tw=W-0.40; ty=top_h+0.04
     avail=H-ty-0.05; hh=0.42; nr=len(rows)+1; rh=(avail-hh)/max(nr,1)
-    cols=["SUB-CAMPAÑA","PRESUP.","CONECT.","AVANCE","% LOGRO","PROYECCIÓN"]
-    cxf=[0.02,0.33,0.45,0.585,0.735,0.905]; cx=[tx+f*tw for f in cxf]
-    al=["left","center","center","center","center","right"]
+    cols=["SUB-CAMPAÑA","PRESUP.","CONECT.","AVANCE","% LOGRO AVANCE","PROYECCIÓN","META MES"]
+    cxf=[0.02,0.275,0.385,0.505,0.645,0.80,0.955]; cx=[tx+f*tw for f in cxf]
+    al=["left","center","center","center","center","right","right"]
     ax.add_patch(FancyBboxPatch((tx,ty),tw,hh,boxstyle="round,pad=0,rounding_size=0.04",fc=NAVY,ec="none",mutation_aspect=1))
     for c,x,a in zip(cols,cx,al): T(x,ty+hh/2,c,9,"white","bold",ha=a)
     def lc(p): return GREEN if p>=99.9 else (ORANGE if p>=90 else REDC)
@@ -182,7 +182,7 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     def toint(v):
         try: return int(re.sub(r"[^\d-]","",str(v)))
         except: return 0
-    y=ty+hh; sump=sumc=suma=sumpr=0
+    y=ty+hh; sump=sumc=suma=sumpr=summm=0
     for i,r in enumerate(rows):
         if i%2==0: ax.add_patch(Rectangle((tx,y),tw,rh,fc=ALT))
         T(cx[0],y+rh/2,r["name"],10,BLUE,"bold")
@@ -202,6 +202,8 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
             T(cx[4],y+rh/2,(f"{p:.0f}%" if p>=100 else f"{p:.1f}%"),8.8,"white","bold",ha="center")
         else: T(cx[4],y+rh/2,"-",9,GREY,"bold",ha="center")
         T(cx[5],y+rh/2,kfmt(r["proy"]),9.3,GREY,ha="right",st="italic")
+        mm=r.get("meta_mes") or 0; summm+=mm
+        T(cx[6],y+rh/2,kfmt(mm),9.0,"#4A5A6A","bold",ha="right")
         y+=rh
     # TOTAL
     ax.add_patch(Rectangle((tx,y),tw,rh,fc="#EAF0F6"))
@@ -213,6 +215,7 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
         rbox(cx[4]-0.33,y+rh/2-0.105,0.66,0.21,(GREEN if (avg_frac==avg_frac and avg_frac>=0.999) else (ORANGE if (avg_frac==avg_frac and avg_frac>=0.90) else REDC)),0.10)
         T(cx[4],y+rh/2,(f"{avg_frac*100:.0f}%" if avg_frac>=1 else f"{avg_frac*100:.1f}%"),8.8,"white","bold",ha="center")
     T(cx[5],y+rh/2,kfmt(sumpr),9.3,NAVY,"bold",ha="right")
+    T(cx[6],y+rh/2,kfmt(summm),9.3,NAVY,"bold",ha="right")
     ax.add_patch(FancyBboxPatch((tx,ty),tw,hh+rh*nr,boxstyle="round,pad=0,rounding_size=0.04",fill=False,ec="#D8E0E8",lw=1.1,mutation_aspect=1))
     buf=io.BytesIO(); fig.savefig(buf,dpi=300,facecolor="white"); plt.close(fig); buf.seek(0)
     return buf.getvalue(), edit_fields
