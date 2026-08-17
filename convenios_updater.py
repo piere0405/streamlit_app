@@ -122,8 +122,12 @@ def load_data(excel_bytes):
 
 
 def plaza_series(df, plaza, current, bank=None):
-    """series por periodo para el grafico de avances + KPIs de la plaza."""
-    d = df[(df.PLAZA == plaza) & ((df.UNIDAD==bank) if (bank and "UNIDAD" in df.columns) else True)]
+    """series por periodo para el grafico de avances + KPIs de la plaza.
+    Si plaza == 'GENERAL' se suman TODAS las plazas del banco."""
+    if str(plaza).upper()=="GENERAL":
+        d = df[(df.UNIDAD==bank)] if (bank and "UNIDAD" in df.columns) else df
+    else:
+        d = df[(df.PLAZA == plaza) & ((df.UNIDAD==bank) if (bank and "UNIDAD" in df.columns) else True)]
     periods = sorted(d.PERIODO.unique())
     def m(tipo, per):  # MontoNeto
         return d[(d.TIPO==tipo)&(d.PERIODO==per)]["MONTONETO"].sum()
@@ -264,7 +268,7 @@ def chart_familia(fam, mes_abbr, size_px, out):
         short = nm if len(nm)<=16 else nm[:15]+"."
         labels.append(f"{short} ({pct:.1f}%)")
     ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(1.0, 0.5),
-              frameon=False, fontsize=9.5, labelspacing=0.5, handlelength=1.0, handletextpad=0.35)
+              frameon=False, fontsize=14, labelspacing=0.65, handlelength=1.2, handletextpad=0.45)
     plt.subplots_adjust(left=0.02, right=0.49, top=0.85, bottom=0.05)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
@@ -325,6 +329,7 @@ def _title_bank_plaza(doc, df):
             for b in ("bbva","bcp","sbp"):
                 if b in tt: bank=b.upper(); break
             if bank is None: return (None,None)
+            if "general" in tt: return (bank, "GENERAL")
             if "UNIDAD" in df.columns:
                 plazas=[str(p) for p in df[df.UNIDAD==bank].PLAZA.dropna().unique()]
             else:
@@ -358,7 +363,7 @@ def edit_detail_text(doc, kpi):
             if kpi["meta_mes"]:                   _set(t, f"META: {kfmt(kpi['meta_mes'])}")
         elif low.startswith("avance:"):           _set(t, f"AVANCE: {kfmt(kpi['avance'])}")
         elif PCT_RE.match(s) and pd.notna(lg):    _set(t, fmt_pct(lg)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
-        elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada")) and pd.notna(lg):
+        elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada","bajo meta","cerca de meta","meta alcanzada")) and pd.notna(lg):
             _set(t, summary_panel.estado_text(lg*100)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
     if pd.notna(lg): summary_panel.recolor_pill(doc, lg*100)
 
@@ -393,12 +398,15 @@ def edit_summary(doc, kpis):
         c=cell("logro",p);  c and pd.notna(lg) and _set(c, fmt_pct(lg))
         c=cell("avance",p); c and _set(c, kfmt(k["avance"]))
         c=cell("proy",p);   c and _set(c, kfmt(k["proyeccion"]))
-    avg = float(np.mean(logros)) if logros else np.nan
+    _gr=[{"avance":kpis[p]["avance"],
+          "logro":(kpis[p]["logro"] if pd.notna(kpis[p].get("logro",np.nan)) else None),
+          "meta_avance":kpis[p].get("meta_avance")} for p in rows if kpis.get(p)]
+    avg = summary_panel.agg_frac(_gr)   # % agregado (avance/meta) = mismo criterio que el panel
     for sp,x,y,txt in shapes:
         if x is None or x>=2.0: continue
         for t in sp.getElementsByTagName("a:t"):
             if t.firstChild and PCT_RE.match(t.firstChild.nodeValue) and pd.notna(avg):
-                _set(t, f"{avg*100:.0f}%")
+                _set(t, (f"{avg*100:.0f}%" if avg>=1 else f"{avg*100:.1f}%"))
 
 
 # ---------- orquestador ----------
@@ -439,10 +447,11 @@ def update_presentation(template_bytes, excel_bytes):
                 if key not in kpis: continue
                 k=kpis[key]; lg=k["logro"]
                 rows.append({"name":disp.get(key,key.title()), "avance":k["avance"],
-                             "logro":(float(lg) if pd.notna(lg) else None), "proy":k["proyeccion"]})
+                             "logro":(float(lg) if pd.notna(lg) else None), "proy":k["proyeccion"],
+                             "meta_avance":k["meta_avance"]})
                 if pd.notna(lg): logros.append(lg)
                 proy_total += k["proyeccion"]
-            avg = float(np.mean(logros)) if logros else float("nan")
+            avg = summary_panel.agg_frac(rows)   # % agregado (avance/meta), coincide con GENERAL
             num = int(re.findall(r"\d+", sid)[0])
             summary_panel.redesign_summary(files, num, avg, rows, proy_total)
         elif "meta avance" in low:

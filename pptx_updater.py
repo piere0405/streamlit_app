@@ -220,7 +220,7 @@ def edit_detail(doc, prod, m):
                 if pd.notna(m["meta_mes"]):           _set(t, f"META: {kfmt(m['meta_mes'])}")
             elif low.startswith("avance:"):           _set(t, f"AVANCE: {kfmt(m['avance'])}")
             elif PCT_RE.match(s) and pd.notna(logro):  _set(t, fmt_pct(logro)); summary_panel.color_run(t, summary_panel.pct_color(logro*100))
-            elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada")) and pd.notna(logro):
+            elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada","bajo meta","cerca de meta","meta alcanzada")) and pd.notna(logro):
                 _set(t, summary_panel.estado_text(logro*100)); summary_panel.color_run(t, summary_panel.pct_color(logro*100))
     if pd.notna(logro): summary_panel.recolor_pill(doc, logro*100)
 
