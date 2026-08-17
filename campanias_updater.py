@@ -29,19 +29,19 @@ MONTH_RE=re.compile(r"(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiem
 # ===================== CONFIG detalle: (title_kw, unidad, subproductos, productos, titulo_grafico, display) =====================
 DETAILS=[
  ("sanna","SANNA",["POLIZAS"],["SEGUROS"],"PÓLIZAS","SANNA Pólizas"),
- ("scotiabank tarjetas","SBP",["OUT"],["TARJETAS"],"FORMALIZADAS","Scotiabank Tarjetas"),
+ ("scotiabank tarjetas","SBP",["OUT"],["TARJETAS"],"APROBADAS","Scotiabank Tarjetas"),
  ("efectiva (dormidos","EFECTIVA",["DORMIDOS","NUEVOS","RECURRENTES"],["PRESTAMOS"],"DESEMBOLSADO","Efectiva (Dor+Nue+Rec)"),
  ("fonocompras","EFECTIVA",["FONOCOMPRAS"],["FONOCOMPRAS"],"DESEMBOLSADO","Fonocompras"),
  ("banbif prestamos","BANBIF",["NACIONAL"],["PRESTAMOS"],"DESEMBOLSADO","Banbif Préstamos"),
  ("tc telemarketing out","BBVA",["OUT"],["TARJETAS"],"FORMALIZADAS","TC Telemarketing OUT"),
- ("pld out prestamos","BBVA",["OUT"],["PRESTAMOS"],"DESEMBOLSADO","PLD OUT (Préstamos)"),
+ ("pld out prestamos","BBVA",["OUT"],["PRESTAMOS"],"OPERACIONES DESEMBOLSADAS","PLD OUT (Préstamos)"),
  ("operaciones out","BBVA",["OUT"],["OPERACIONES"],"FORMALIZADAS","Operaciones OUT"),
  ("portafolio","BBVA",["OUT"],["PORTAFOLIO"],"DESEMBOLSADO","Portafolio"),
  ("tc hibrido","BBVA",["HIBRIDO"],["TARJETAS"],"FORMALIZADAS","TC Híbrido (Tarjetas)"),
  ("operaciones digital","BBVA",["HIBRIDO"],["OPERACIONES"],"FORMALIZADAS","Operaciones Digital"),
  ("pld digital","BBVA",["HIBRIDO"],["PRESTAMOS"],"DESEMBOLSADO","PLD Digital"),
  ("tc respaldada","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TC Respaldada"),
- ("tarjetas de credito","DINERS",["-"],["TARJETAS"],"FORMALIZADAS","Diners Tarjetas"),
+ ("tarjetas de credito","DINERS",["-"],["TARJETAS"],"ACTIVADAS","Diners Tarjetas"),
  # UNICEF (subproductos; se usan también para clonar la sección)
  ("digital","UNICEF",["DIGITAL"],["DONACIONES"],"DONACIONES","UNICEF Digital"),
  ("extracash","UNICEF",["EXTRACASH"],["RETENCIONES"],"RETENCIONES","Extracash"),
@@ -179,7 +179,7 @@ def edit_detail_text(doc,kpi):
             if kpi["meta_mes"]: _set(t,f"META: {kfmt(kpi['meta_mes'])}")
         elif low.startswith("avance:"): _set(t,f"AVANCE: {kfmt(kpi['avance'])}")
         elif PCT_RE.match(s) and pd.notna(lg): _set(t,fmt_pct(lg)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
-        elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada")) and pd.notna(lg):
+        elif ((re.match(r"^\s*EN\s+\w", s, re.I) and len(s.strip())<22) or s.strip().lower() in ("bajo la meta","cerca de la meta","meta alcanzada","bajo meta","cerca de meta","meta alcanzada")) and pd.notna(lg):
             _set(t, summary_panel.estado_text(lg*100)); summary_panel.color_run(t, summary_panel.pct_color(lg*100))
     if pd.notna(lg): summary_panel.recolor_pill(doc, lg*100)
 
@@ -268,7 +268,9 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
         if kind=="detail":
             if is_conv and convdf is not None:
                 bank,plaza=CV._title_bank_plaza(doc, convdf)
-                if bank and plaza and ((convdf.UNIDAD==bank)&(convdf.PLAZA==plaza)).any():
+                _ok = ((convdf.UNIDAD==bank).any() if str(plaza).upper()=="GENERAL"
+                       else ((convdf.UNIDAD==bank)&(convdf.PLAZA==plaza)).any())
+                if bank and plaza and _ok:
                     s=CV.plaza_series(convdf,plaza,convcur,bank=bank); CV.edit_detail_text(doc,s["kpi"]); _fix_dates(doc,mes,year,dia)
                     fam=CV.plaza_familia(convdf,plaza,convcur,bank=bank); aso=CV.plaza_asesores(convdf,plaza,convcur,bank=bank)
                     rid2img=dict(re.findall(r'Id="([^"]+)"[^>]*Target="[^"]*media/([^"]+)"', rels))
@@ -325,7 +327,8 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                     lg=s["kpi"]["logro"]
                     g["rows"].append({"name":disp,"key":disp,"avance":s["kpi"]["avance"],
                                       "logro":(float(lg) if pd.notna(lg) else None),
-                                      "proy":(s["kpi"]["proyeccion"] if pd.notna(s["kpi"]["proyeccion"]) else 0)})
+                                      "proy":(s["kpi"]["proyeccion"] if pd.notna(s["kpi"]["proyeccion"]) else 0),
+                                      "meta_avance":s["kpi"]["meta_avance"]})
         else:
             _fix_dates(doc,mes,year,dia); files[sf]=doc.toxml().encode("utf-8")
 
@@ -339,16 +342,15 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
             rows=[]; logros=[]; pt=0.0
             for key in sorted(dfb.PLAZA.dropna().unique()):
                 k=CV.plaza_series(convdf,key,convcur,bank=bank)["kpi"]; lg=k["logro"]
-                rows.append({"name":str(key).title(),"avance":k["avance"],"logro":(float(lg) if pd.notna(lg) else None),"proy":k["proyeccion"]})
+                rows.append({"name":str(key).title(),"avance":k["avance"],"logro":(float(lg) if pd.notna(lg) else None),"proy":k["proyeccion"],"meta_avance":k["meta_avance"]})
                 if pd.notna(lg): logros.append(lg)
                 pt+=k["proyeccion"]
-            avg=float(np.mean(logros)) if logros else float("nan")
+            avg=summary_panel.agg_frac(rows)   # % agregado (avance/meta)
             summary_panel.redesign_summary(files,num,avg,rows,pt)   # card4 = Proyección total
         else:
             g=groups.get(num,{"rows":[]}); rows=g["rows"]
             if not rows: continue
-            logros=[r["logro"] for r in rows if r["logro"] is not None]
-            avg=float(np.mean(logros)) if logros else float("nan")
+            avg=summary_panel.agg_frac(rows)   # % agregado (avance/meta)
             proy_total=sum((r["proy"] or 0) for r in rows)
             card4=None   # 1 sola campaña -> Proyección total (sin S/, suele ser conteo de TC)
             if len(rows)<=1:

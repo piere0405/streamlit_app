@@ -26,12 +26,21 @@ if modo.startswith("Comité"):
     f_camp=st.file_uploader("camp", type=["xlsx","xlsm"], key="camp", label_visibility="collapsed")
     st.markdown('<div class="step">Paso 2 · Excel de Convenios</div>', unsafe_allow_html=True)
     f_conv=st.file_uploader("conv", type=["xlsx","xlsm"], key="conv", label_visibility="collapsed")
+    st.markdown('<div class="step">Paso 3 · Día de corte</div>', unsafe_allow_html=True)
+    st.caption("Día hasta el que llega la información (todas las fechas del PPT dirán \u201cavance al día X\u201d).")
+    dia_corte=st.number_input("Día de corte", min_value=1, max_value=31, value=5, step=1, label_visibility="collapsed")
     ready=(f_camp is not None) and (f_conv is not None)
     if not ready: st.caption("Sube los dos Excel para habilitar el botón.")
     if st.button("Generar presentación consolidada", type="primary", disabled=not ready, use_container_width=True):
         try:
             with st.spinner("Actualizando todas las unidades…"):
-                pptx,res,warns=campanias_updater.update_presentation(open(os.path.join(BASE,"plantilla_campanias.pptx"),"rb").read(), f_camp.read(), f_conv.read())
+                tpl=open(os.path.join(BASE,"plantilla_campanias.pptx"),"rb").read()
+                camp_bytes=f_camp.read(); conv_bytes=f_conv.read()
+                try:
+                    pptx,res,warns=campanias_updater.update_presentation(tpl, camp_bytes, conv_bytes, dia_override=int(dia_corte))
+                except TypeError:
+                    pptx,res,warns=campanias_updater.update_presentation(tpl, camp_bytes, conv_bytes)
+                    st.warning("El motor desplegado es una versión anterior (sin 'día de corte'). Sube el campanias_updater.py más reciente y reinicia la app.")
             st.success(f"Presentación lista · Periodo {res['mes']} (al día {res['dia']}).")
             for w in warns: st.warning(w)
             st.download_button("⬇  Descargar PowerPoint", pptx, file_name=f"campanias_{res['periodo']}.pptx", mime=MIME, type="primary", use_container_width=True)

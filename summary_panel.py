@@ -15,7 +15,17 @@ NAVY="#123A5E"; NAVY2="#1C4E80"; GREEN="#8CA61E"; ORANGE="#E08A1E"; BLUE="#103A5
 GREY="#7A8A99"; CARDBG="#F5F8FB"; ALT="#F7F9FB"; BARBG="#E4E9EF"; REDC="#C0392B"
 EMU=914400
 
-def _logro_color(p):  return GREEN if p>=100 else (ORANGE if p>=80 else REDC)
+def _logro_color(p):  return GREEN if p>=99.9 else (ORANGE if p>=90 else REDC)
+def agg_frac(rows):
+    """% agregado = avance total / meta-a-la-fecha total (coincide con la lámina GENERAL).
+    Incluye filas con avance 0 (usa meta_avance real; si falta, back-calcula avance/logro)."""
+    ta=sum((r.get("avance") or 0) for r in rows)
+    def _ma(r):
+        if r.get("meta_avance") is not None: return r["meta_avance"] or 0
+        if r.get("logro") and r.get("avance") is not None and r["logro"]>0: return r["avance"]/r["logro"]
+        return 0
+    tm=sum(_ma(r) for r in rows)
+    return (ta/tm) if tm>0 else float("nan")
 def kfmt(v):
     v=float(v)
     if v>=1_000_000: return f"{v/1e6:.2f}M"
@@ -110,13 +120,22 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     top_h=H*0.47
     # ----- Avance promedio: numero grande + barra + estado (umbral) -----
     def nivel(p):
-        if p>=99.9: return ("Meta alcanzada", GREEN, "#EAF0D2")
-        if p>=90:   return ("Cerca de la meta", ORANGE, "#FBEED6")
-        return ("Bajo la meta", REDC, "#F7DDDA")
+        if p>=99.9: return ("META ALCANZADA", GREEN, "#EAF0D2")
+        if p>=90:   return ("CERCA DE META", ORANGE, "#FBEED6")
+        return ("BAJO META", REDC, "#F7DDDA")
     nv_name, nv_col, nv_bg = nivel(avg_frac*100 if avg_frac==avg_frac else 0)
     hx=0.34
     T(hx,top_h*0.16,"AVANCE PROMEDIO",8.4,GREY,"bold")
-    T(hx,top_h*0.41,(f"{avg_frac*100:.0f}%" if avg_frac==avg_frac else "-"),41,nv_col,"bold",va="center")
+    T(hx,top_h*0.41,((f"{avg_frac*100:.0f}%" if avg_frac>=1 else f"{avg_frac*100:.1f}%") if avg_frac==avg_frac else "-"),41,nv_col,"bold",va="center")
+    _tav=sum((r.get("avance") or 0) for r in rows)
+    # meta a la fecha total = suma de la meta_avance REAL de cada fila (incluye filas con avance 0,
+    # p.ej. una plaza sin ventas todavía). Solo si no viene meta_avance se back-calcula avance/logro.
+    def _row_ma(r):
+        if r.get("meta_avance") is not None: return r["meta_avance"] or 0
+        if r.get("logro") and r.get("avance") is not None and r["logro"]>0: return r["avance"]/r["logro"]
+        return 0
+    _tma=sum(_row_ma(r) for r in rows)
+    T(hx,top_h*0.55,f"Meta: {kfmt(_tma)}  |  Avance: {kfmt(_tav)}",8.3,GREY,"bold")
     bx=hx; bw=2.02; by=top_h*0.63
     ax.add_patch(FancyBboxPatch((bx,by),bw,0.16,boxstyle="round,pad=0,rounding_size=0.08",fc=BARBG,ec="none",mutation_aspect=1))
     frp=max(0.03,min(1.0,avg_frac if avg_frac==avg_frac else 0))
@@ -192,7 +211,7 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     T(cx[3],y+rh/2,kfmt(suma),9.0,NAVY,"bold",ha="center")
     if avg_frac==avg_frac:
         rbox(cx[4]-0.33,y+rh/2-0.105,0.66,0.21,(GREEN if (avg_frac==avg_frac and avg_frac>=0.999) else (ORANGE if (avg_frac==avg_frac and avg_frac>=0.90) else REDC)),0.10)
-        T(cx[4],y+rh/2,f"{avg_frac*100:.0f}%",8.8,"white","bold",ha="center")
+        T(cx[4],y+rh/2,(f"{avg_frac*100:.0f}%" if avg_frac>=1 else f"{avg_frac*100:.1f}%"),8.8,"white","bold",ha="center")
     T(cx[5],y+rh/2,kfmt(sumpr),9.3,NAVY,"bold",ha="right")
     ax.add_patch(FancyBboxPatch((tx,ty),tw,hh+rh*nr,boxstyle="round,pad=0,rounding_size=0.04",fill=False,ec="#D8E0E8",lw=1.1,mutation_aspect=1))
     buf=io.BytesIO(); fig.savefig(buf,dpi=300,facecolor="white"); plt.close(fig); buf.seek(0)
@@ -261,7 +280,7 @@ def insert_text_fields(files, slide_num, region_emu, fields):
 def pct_color(p):
     return "#8CA61E" if p>=99.9 else ("#E08A1E" if p>=90 else "#C0392B")
 def estado_text(p):
-    return "Meta alcanzada" if p>=99.9 else ("Cerca de la meta" if p>=90 else "Bajo la meta")
+    return "META ALCANZADA" if p>=99.9 else ("CERCA DE META" if p>=90 else "BAJO META")
 _PILL_LIGHT={"#8CA61E":"#EAF0D2","#E08A1E":"#FBEED6","#C0392B":"#F7DDDA"}
 def _set_fill(sp, hexhex):
     spPr=sp.getElementsByTagName("p:spPr")
@@ -284,24 +303,32 @@ def _set_line(sp, hexhex):
     doc=sp.ownerDocument; sf=doc.createElement("a:solidFill"); clr=doc.createElement("a:srgbClr")
     clr.setAttribute("val",hexhex.lstrip("#")); sf.appendChild(clr); ln.insertBefore(sf, ln.firstChild)
 def recolor_pill(doc, p):
-    """Pinta el pill según el umbral: punto (fuerte), fondo (claro) y TEXTO (fuerte)."""
+    """Pinta el pill top-left según el umbral: punto (fuerte), fondo (claro) y texto (fuerte),
+    para que COINCIDA con el color del % grande. Preserva el contenido 'META: ...'; solo
+    reemplaza el texto en pills de estado (bajo/cerca/meta alcanzada)."""
     strong=pct_color(p).lstrip("#"); light=_PILL_LIGHT[pct_color(p)].lstrip("#"); E=914400
     for sp in doc.getElementsByTagName("p:sp"):
-        off=sp.getElementsByTagName("a:off")
+        off=sp.getElementsByTagName("a:off"); ext=sp.getElementsByTagName("a:ext")
         if not off: continue
-        try: x=int(off[0].getAttribute("x"))/E; y=int(off[0].getAttribute("y"))/E
+        try:
+            x=int(off[0].getAttribute("x"))/E; y=int(off[0].getAttribute("y"))/E
+            w=(int(ext[0].getAttribute("cx"))/E) if ext else 0.0
         except: continue
-        if x>2.85 or not (0.74<=y<=1.12): continue
+        if x>2.85 or not (0.74<=y<=1.55) or w>5.0: continue     # pill top-left; excluye barras full-width
         geo=sp.getElementsByTagName("a:prstGeom"); prst=geo[0].getAttribute("prst") if geo else ""
         txt="".join(t.firstChild.nodeValue for t in sp.getElementsByTagName("a:t") if t.firstChild).strip()
         spPr=sp.getElementsByTagName("p:spPr")
-        if prst=="ellipse":                                   # punto -> fuerte (relleno+borde+gradientes)
+        if prst=="ellipse":                                     # punto -> fuerte
             for c in (spPr[0].getElementsByTagName("a:srgbClr") if spPr else []): c.setAttribute("val",strong)
-        elif prst in ("rect","roundRect") and not txt:        # fondo -> claro (todos los colores)
+        elif prst in ("rect","roundRect") and not txt:          # fondo -> claro
             for c in (spPr[0].getElementsByTagName("a:srgbClr") if spPr else []): c.setAttribute("val",light)
-        elif prst in ("rect","roundRect") and txt:            # texto del pill -> fuerte
-            for t in sp.getElementsByTagName("a:t"):
-                if t.firstChild: color_run(t, "#"+strong)
+        elif prst in ("rect","roundRect") and txt:              # texto del pill
+            a_ts=[t for t in sp.getElementsByTagName("a:t") if t.firstChild]
+            if txt.lower().startswith(("bajo","cerca","meta alcanzada","en ")):   # pill de ESTADO -> reemplaza
+                if a_ts:
+                    a_ts[0].firstChild.nodeValue=estado_text(p)
+                    for t in a_ts[1:]: t.firstChild.nodeValue=""
+            for t in a_ts: color_run(t, "#"+strong)             # recolorea fuente (preserva 'META: ...')
 def color_run(t, hexhex):
     """Pinta el color de la fuente del run que contiene el <a:t> t."""
     r=t.parentNode
