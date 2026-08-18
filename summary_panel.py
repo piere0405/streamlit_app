@@ -106,7 +106,7 @@ def read_context(slide_xml):
             "activos":activos or "-", "pend_ingreso":(str(pend) if pend is not None else "-")}
 
 # ---------- render del panel ----------
-def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=None):
+def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=None, hdr_color=NAVY):
     from matplotlib.patches import Wedge, Circle
     W,H=region_in
     fig=plt.figure(figsize=(W,H),dpi=300); ax=fig.add_axes([0,0,1,1])
@@ -175,7 +175,7 @@ def render_panel(region_in, avg_frac, ctx, cumplen_txt, proy_total, rows, card4=
     cols=["SUB-CAMPAÑA","PRESUP.","CONECT.","AVANCE","% LOGRO AVANCE","PROYECCIÓN","META MES"]
     cxf=[0.02,0.275,0.385,0.505,0.645,0.80,0.955]; cx=[tx+f*tw for f in cxf]
     al=["left","center","center","center","center","right","right"]
-    ax.add_patch(FancyBboxPatch((tx,ty),tw,hh,boxstyle="round,pad=0,rounding_size=0.04",fc=NAVY,ec="none",mutation_aspect=1))
+    ax.add_patch(FancyBboxPatch((tx,ty),tw,hh,boxstyle="round,pad=0,rounding_size=0.04",fc=hdr_color,ec="none",mutation_aspect=1))
     for c,x,a in zip(cols,cx,al): T(x,ty+hh/2,c,9,"white","bold",ha=a)
     def lc(p): return GREEN if p>=99.9 else (ORANGE if p>=90 else REDC)
     def lc_light(p): return "#C4DA6E" if p>=99.9 else ("#F0BC80" if p>=90 else "#E6A39C")
@@ -398,6 +398,9 @@ def redesign_summary(files, slide_num, avg_frac, rows, proy_total, card4=None):
     region=body_region(files, slide_num)
     region_in=(region[2]/EMU, region[3]/EMU)
     n=len(rows); cumple=sum(1 for r in rows if r["logro"] is not None and r["logro"]>=0.999)
-    png,edit_fields=render_panel(region_in, avg_frac, ctx, f"{cumple} / {n}", proy_total, rows, card4)
+    # Secciones MF (banda superior guinda #6B150B: SBP, Scotia Tarjetas, BCP, Efectiva, SANNA)
+    # llevan la cabecera de la tabla del mismo rojo; PlusMetas se queda en azul (NAVY).
+    hdr_color = "#6B150B" if 'val="6B150B"' in slide_xml else NAVY
+    png,edit_fields=render_panel(region_in, avg_frac, ctx, f"{cumple} / {n}", proy_total, rows, card4, hdr_color=hdr_color)
     insert_panel(files, slide_num, region, png)
     insert_text_fields(files, slide_num, region, edit_fields)
