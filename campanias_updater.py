@@ -285,6 +285,7 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                         cx=int(ext[0].getAttribute("cx")); cy=int(ext[0].getAttribute("cy"))
                         if cy: frames[img]=(cx/EMU, cx/cy)
                     files[sf]=doc.toxml().encode("utf-8")
+                    mf_brand = ('val="6B150B"' in files[sf].decode("utf-8"))   # MF (guinda) vs PlusMetas
                     for im in [i for i in slide_imgs.get(sid,[]) if i not in LOGOS]:
                         if im not in frames: continue
                         w_in,asp=frames[im]
@@ -294,9 +295,9 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
                             else:                                            # dona o asesores según CONTENIDO original
                                 Wp=max(600,round(w_in*300)); buf=io.BytesIO()
                                 if _is_donut(files[f"ppt/media/{im}"]):
-                                    CV.chart_familia(fam,MES_ABBR[month],(Wp,round(Wp/asp)),buf)
+                                    CV.chart_familia(fam,MES_ABBR[month],(Wp,round(Wp/asp)),buf,mf=mf_brand)
                                 else:
-                                    CV.chart_asesores(aso,(Wp,round(Wp/asp)),buf)
+                                    CV.chart_asesores(aso,(Wp,round(Wp/asp)),buf,mf=mf_brand)
                             files[f"ppt/media/{im}"]=buf.getvalue()
                         except Exception as _e:
                             warnings.append(f"{bank} · {plaza}: no se pudo regenerar un gráfico ({type(_e).__name__}: {_e}); se conservó la imagen original.")
@@ -370,6 +371,16 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
         xml=files[n].decode("utf-8")
         if not (DATE_RE.search(xml) or CIERRE_RE.search(xml)): continue
         d2=parseString(xml); _fix_dates(d2,mes,year,dia); files[n]=d2.toxml().encode("utf-8")
+
+    # el logo de cliente siempre al frente (para que no lo tape el panel del resumen)
+    _logo_re=re.compile(r'<p:pic>(?:(?!</p:pic>).)*?name="ClienteLogo".*?</p:pic>', re.S)
+    for n in list(files):
+        if not re.match(r"ppt/slides/slide\d+\.xml$", n): continue
+        xml=files[n].decode("utf-8"); m=_logo_re.search(xml)
+        if m:
+            pic=m.group(0)
+            xml=xml.replace(pic,"",1).replace("</p:spTree>", pic+"</p:spTree>",1)
+            files[n]=xml.encode("utf-8")
 
     out=io.BytesIO()
     with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as z:

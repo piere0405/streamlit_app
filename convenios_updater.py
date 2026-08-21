@@ -170,54 +170,66 @@ def _fig(size_px, dpi=150):
     return fig, ax
 
 def chart_avances(s, plaza, size_px, out, dia):
+    import matplotlib.colors as mc
+    from matplotlib.patches import Rectangle
     fig, ax = _fig(size_px)
     n = len(s["periods"]); xs = np.arange(n); cur = s["cur_idx"]
-    if n == 0:                       # sin periodos -> lienzo vacio, nunca reventar
+    if n == 0:
         ax.axis("off")
         ax.text(0.5, 0.5, "Sin información", transform=ax.transAxes,
                 ha="center", va="center", color="#8A97A4", fontsize=16, fontweight="bold")
         fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
         return
-    cmax = max(s["cierre"]) or 1; amax = max(s["avance"]) or 1
-    ax.set_ylim(0, cmax*1.52)
-    # barras Monto Avance (banda baja, más corta para no chocar con la línea)
-    barh = [a*((cmax*0.24)/amax) for a in s["avance"]]
-    ax.bar(xs, barh, width=0.5, color=BAR_AV, zorder=3)
-    for x,h,a,o in zip(xs, barh, s["avance"], s["ops"]):
-        ax.text(x-0.07, h+cmax*0.02, fmt_bar(a), ha="center", va="bottom",
-                color="#111", fontsize=15, fontweight="bold")
-        ax.text(x+0.36, h+cmax*0.02, f"{int(o)}", ha="left", va="bottom",
-                color=RED, fontsize=15, fontweight="bold")
-    # linea Cierre + proyeccion
-    if cur is not None and cur > 0:
-        ax.plot(xs[:cur+1], s["cierre"][:cur+1], color=LINE_C, lw=4, zorder=4)
-        ax.plot(xs[cur-1:cur+1], s["cierre"][cur-1:cur+1], color=LINE_PROJ, lw=4, ls=(0,(4,3)), zorder=5)
+    cmax=max(s["cierre"]) or 1; cmin=min(s["cierre"]); crange=(cmax-cmin) or 1
+    amax=max(s["avance"]) or 1
+    ax.set_ylim(0,1.0); ax.set_xlim(-0.6, n-0.4)
+    LINE="#2166AC"                                   # azul fuerte (Cierre / Proyección)
+    # escalas SEPARADAS: barras abajo, línea arriba (no choca con la leyenda y resaltan las caídas)
+    def ybar(a): return 0.46*a/amax
+    def yln(c):  return 0.56 + 0.24*(c-cmin)/crange
+    # --- barras: altas, ANGOSTAS y con degradado (claro arriba, oscuro abajo) ---
+    cb=np.array(mc.to_rgb("#7F868E")); ct=np.array(mc.to_rgb("#CBD0D6")); wbar=0.46; SL=26
+    for x,a in zip(xs, s["avance"]):
+        if a<=0: continue
+        h=ybar(a)
+        for k in range(SL):
+            y0=h*k/SL; y1=h*(k+1)/SL; col=cb+(ct-cb)*(k/(SL-1))
+            ax.add_patch(Rectangle((x-wbar/2, y0), wbar, y1-y0, fc=col, ec="none", zorder=3))
+    for x,a,o in zip(xs, s["avance"], s["ops"]):
+        h=ybar(a)
+        ax.text(x-0.04, h+0.02, fmt_bar(a), ha="center", va="bottom", color="#2b2b2b", fontsize=15, fontweight="bold", zorder=6)
+        ax.text(x+0.30, h+0.02, f"{int(o)}", ha="left", va="bottom", color=RED, fontsize=15, fontweight="bold", zorder=6)
+    # --- línea Cierre + proyección (azul fuerte con puntos, como el ejemplo) ---
+    yv=[yln(c) for c in s["cierre"]]
+    mk=dict(marker="o", markersize=8.5, markerfacecolor=LINE, markeredgecolor="white", markeredgewidth=1.6)
+    if cur is not None and 0 < cur < n:
+        ax.plot(xs[:cur], yv[:cur], color=LINE, lw=4.2, zorder=4, **mk)                       # sólido con puntos (0..cur-1)
+        ax.plot(xs[cur-1:cur+1], yv[cur-1:cur+1], color=LINE, lw=4.2, ls=(0,(6,5)),
+                dash_capstyle="round", zorder=5)                                               # proyección PUNTEADA (- - - -)
+        ax.plot([xs[cur-1], xs[cur]], [yv[cur-1], yv[cur]], color=LINE, ls="none",
+                zorder=6, **mk)                                                                # puntos sólidos en ambos extremos
     else:
-        ax.plot(xs, s["cierre"], color=LINE_C, lw=4, zorder=4)
-    for i,(x,c) in enumerate(zip(xs, s["cierre"])):
-        ax.text(x, c+cmax*0.06, fmt_mm(c), ha="center", va="bottom",
-                color=REDLBL, fontsize=17, fontweight="bold")
-    # ticket promedio (fila inferior, con mas separacion de los meses)
+        ax.plot(xs, yv, color=LINE, lw=4.2, zorder=4, **mk)
+    for x,c,yy in zip(xs, s["cierre"], yv):
+        ax.text(x, yy+0.035, fmt_mm(c), ha="center", va="bottom", color=REDLBL, fontsize=16, fontweight="bold", zorder=6)
+    # ticket promedio (fila inferior)
     for x,t in zip(xs, s["ticket"]):
-        ax.text(x, -cmax*0.22, fmt_ticket(t), ha="center", va="top",
-                color=TICKET, fontsize=15, fontweight="bold")
+        ax.text(x, -0.12, fmt_ticket(t), ha="center", va="top", color=TICKET, fontsize=15, fontweight="bold")
     # ejes
     ax.set_xticks(xs); ax.set_xticklabels(s["labels"], color="#111", fontsize=20, fontweight="bold")
     ax.tick_params(axis="x", length=0, pad=6); ax.set_yticks([])
     for sp in ("top","left","right"): ax.spines[sp].set_visible(False)
     ax.spines["bottom"].set_color("#B0B0B0")
-    ax.set_xlim(-0.6, n-0.4)
-    ax.set_title(f"Avances del ámbito {plaza}, al {dia} de cada mes",
-                 color=NAVY, fontsize=25, fontweight="bold", pad=30)
-    ax.text(0.5, -0.34, "Ticket Promedio (S/)", transform=ax.transAxes,
+    # (sin título "Avances del ámbito ...")
+    ax.text(0.5, -0.24, "Ticket Promedio (S/)", transform=ax.transAxes,
             ha="center", va="top", color=NAVY, fontsize=19, fontweight="bold")
-    leg = [Patch(color=BAR_AV, label="Monto Avance"),
-           Line2D([0],[0], color=LINE_C, lw=4, label="Cierre"),
+    leg = [Patch(color="#A9AFB6", label="Monto Avance"),
+           Line2D([0],[0], color=LINE, lw=4, marker="o", markersize=8, markerfacecolor=LINE, markeredgecolor="white", label="Cierre"),
            Line2D([0],[0], marker="s", color="w", markerfacecolor=RED, markersize=13, label="#OP"),
-           Line2D([0],[0], color=LINE_PROJ, lw=4, ls=(0,(4,3)), label="Proyección")]
-    ax.legend(handles=leg, loc="upper left", ncol=2, frameon=False, fontsize=15,
-              handlelength=1.5, columnspacing=1.4, bbox_to_anchor=(0.0, 1.03))
-    plt.subplots_adjust(left=0.02, right=0.98, top=0.83, bottom=0.28)
+           Line2D([0],[0], color=LINE, lw=4, ls=(0,(6,5)), label="Proyección")]
+    ax.legend(handles=leg, loc="upper left", ncol=2, frameon=False, fontsize=14,
+              handlelength=1.9, columnspacing=1.4, bbox_to_anchor=(0.0, 1.22))
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.80, bottom=0.24)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
 def _donut_vacio(ax, size_px=None):
@@ -228,68 +240,120 @@ def _donut_vacio(ax, size_px=None):
             color="#8A97A4", fontsize=11, fontweight="bold")
 
 
-def chart_familia(fam, mes_abbr, size_px, out):
+# ---------- paletas por marca (PlusMetas azul/teal/verde · MF guinda/rojo/naranja) ----------
+PM_PALETTE = ["#1C6FB4","#14A5B8","#5BA829","#8BC34A","#AFCB07","#123A5E","#2E90C4","#6FAF3A","#3FB0C9","#7AC043"]
+MF_PALETTE = ["#6B150B","#C0392B","#E08A1E","#7A1E29","#D4A017","#A34A3C","#922B21","#B5561F"]
+def _palette(mf):     return MF_PALETTE if mf else PM_PALETTE
+def _aso_colors(mf):  return (["#6B150B","#C0392B","#D97706"] if mf else ["#0F4C81","#14A5B8","#8BC34A"])
+def _text_on(hexc):
+    h=hexc.lstrip("#"); r,g,b=[int(h[i:i+2],16) for i in (0,2,4)]
+    return "#1B2A38" if (0.299*r+0.587*g+0.114*b)/255 > 0.62 else "#FFFFFF"
+
+# ---------- squarified treemap (sin dependencias externas) ----------
+def _tm_layout(sizes, x, y, dx, dy):
+    if dx>=dy:
+        w=sum(sizes)/dy; r=[]; yy=y
+        for s in sizes: r.append((x,yy,w,s/w)); yy+=s/w
+        return r
+    h=sum(sizes)/dx; r=[]; xx=x
+    for s in sizes: r.append((xx,y,s/h,h)); xx+=s/h
+    return r
+def _tm_leftover(sizes, x, y, dx, dy):
+    c=sum(sizes)
+    if dx>=dy: w=c/dy; return (x+w,y,dx-w,dy)
+    h=c/dx;    return (x,y+h,dx,dy-h)
+def _tm_worst(sizes, x, y, dx, dy):
+    return max(max(w/h,h/w) for (_,_,w,h) in _tm_layout(sizes,x,y,dx,dy))
+def _squarify_rec(sizes, x, y, dx, dy):
+    if not sizes: return []
+    if len(sizes)==1: return _tm_layout(sizes,x,y,dx,dy)
+    i=1
+    while i<len(sizes) and _tm_worst(sizes[:i],x,y,dx,dy)>=_tm_worst(sizes[:i+1],x,y,dx,dy): i+=1
+    cur, rem = sizes[:i], sizes[i:]
+    lx,ly,ldx,ldy=_tm_leftover(cur,x,y,dx,dy)
+    return _tm_layout(cur,x,y,dx,dy)+_squarify_rec(rem,lx,ly,ldx,ldy)
+def _squarify(sizes, x, y, dx, dy):
+    sizes=[float(s) for s in sizes]
+    if not sizes: return []
+    t=sum(sizes); sizes=[s*dx*dy/t for s in sizes]   # normalizar al área de la caja
+    return _squarify_rec(sizes, x, y, dx, dy)
+
+def _chart_header(fig, ax, title, mf, size_px):
+    """Título del gráfico (sin logo)."""
+    ax.set_title(title, color="#1a2b3c", fontsize=15, fontweight="bold", loc="left", x=0.0, y=1.0, pad=8)
+
+def chart_familia(fam, mes_abbr, size_px, out, mf=False):
+    from matplotlib.patches import FancyBboxPatch
     fig, ax = _fig(size_px)
-    # --- saneamiento: quitar NaN/negativos y quedarnos solo con valores > 0 ---
     names, vals = [], []
-    try:
-        pares = list(zip(list(fam.index), list(fam.values)))
-    except Exception:
-        pares = []
-    for nm, v in pares:
-        try:
-            v = float(v)
-        except (TypeError, ValueError):
-            continue
-        if v != v or v <= 0:          # NaN o no positivo
-            continue
-        names.append(nm); vals.append(v)
-
-    total = sum(vals)
-    # matplotlib >= 3.11 lanza ValueError('All wedge sizes are zero') si la
-    # lista esta vacia o suma cero -> dibujamos una dona vacia y salimos.
-    if not vals or total <= 0:
-        _donut_vacio(ax)
-        ax.set_title("Participación por Familia",
-                     color="#111", fontsize=15, fontweight="bold", loc="left", pad=10)
-        ax.axis("equal")
-        plt.subplots_adjust(left=0.02, right=0.49, top=0.85, bottom=0.05)
-        fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
-        return
-
-    colors = [FAMILY_COLORS.get(nm, FALLBACK_COLORS[i % len(FALLBACK_COLORS)]) for i,nm in enumerate(names)]
-    wedges = ax.pie(vals, colors=colors, startangle=90, counterclock=False,
-                    wedgeprops=dict(width=0.44, edgecolor="white", linewidth=3))[0]
-    ax.set_title("Participación por Familia",
-                 color="#111", fontsize=15, fontweight="bold", loc="left", pad=10)
-    labels = []
-    for nm,v in zip(names,vals):
-        pct = v/total*100
-        short = nm if len(nm)<=16 else nm[:15]+"."
-        labels.append(f"{short} ({pct:.1f}%)")
-    ax.legend(wedges, labels, loc="center left", bbox_to_anchor=(1.0, 0.5),
-              frameon=False, fontsize=14, labelspacing=0.65, handlelength=1.2, handletextpad=0.45)
-    plt.subplots_adjust(left=0.02, right=0.49, top=0.85, bottom=0.05)
+    try: pares=list(zip(list(fam.index), list(fam.values)))
+    except Exception: pares=[]
+    for nm,v in pares:
+        try: v=float(v)
+        except (TypeError,ValueError): continue
+        if v!=v or v<=0: continue
+        names.append(str(nm)); vals.append(v)
+    ax.set_xlim(0,100); ax.set_ylim(0,100); ax.axis("off")
+    _chart_header(fig, ax, "Participación por Familia", mf, size_px)
+    total=sum(vals)
+    if not vals or total<=0:
+        ax.text(50,50,"Sin información", ha="center", va="center", color="#8A97A4", fontsize=13, fontweight="bold")
+        plt.subplots_adjust(left=0.02,right=0.98,top=0.82,bottom=0.05); fig.savefig(out,dpi=150,transparent=True); plt.close(fig); return
+    order=sorted(range(len(vals)), key=lambda i:-vals[i]); names=[names[i] for i in order]; vals=[vals[i] for i in order]
+    keep=[[nm,v] for nm,v in zip(names,vals) if v/total*100>=1.5]
+    rest=sum(v for nm,v in zip(names,vals) if v/total*100<1.5)
+    if rest>0:
+        merged=False
+        for k in keep:
+            if k[0].strip().lower()=="otros": k[1]+=rest; merged=True; break
+        if not merged: keep.append(["Otros",rest])
+    keep=keep[:8]; names=[k[0] for k in keep]; vals=[k[1] for k in keep]
+    pal=MF_PALETTE if mf else PM_PALETTE               # MISMA paleta de la sección
+    n=len(names); PXU=150/72.0
+    top=84; bot=4; rowh=(top-bot)/n
+    fnm=max(11, min(14, size_px[1]*0.026)); fpct=max(12, min(16, size_px[1]*0.031))
+    # columna de nombres ADAPTATIVA: ancho suficiente para el nombre más largo (no se corta ni toca la barra)
+    longest_px=max(len(nm) for nm in names)*fnm*PXU*0.56
+    name_x=1.5; name_w=min(50, max(28, longest_px/size_px[0]*100 + 3))
+    bar_x0=name_x+name_w+2; bar_x1=79; pct_x=99
+    maxch=max(6, int(name_w/100.0*size_px[0]/(fnm*PXU*0.56)))
+    maxp=max(v/total*100 for v in vals) or 1
+    for i,(nm,v) in enumerate(zip(names,vals)):
+        yc=top-rowh*(i+0.5); pct=v/total*100; col=pal[i%len(pal)]
+        nms=nm if len(nm)<=maxch else nm[:maxch-1]+"…"
+        ax.text(name_x, yc, nms, ha="left", va="center", color="#33475b", fontsize=fnm, fontweight="bold")
+        bh=min(rowh*0.52, 6.0)
+        ax.add_patch(FancyBboxPatch((bar_x0, yc-bh/2), bar_x1-bar_x0, bh,
+            boxstyle=f"round,pad=0,rounding_size={bh/2}", fc="#E9EDF1", ec="none", mutation_aspect=1))
+        bl=max((bar_x1-bar_x0)*(pct/maxp), bh)
+        ax.add_patch(FancyBboxPatch((bar_x0, yc-bh/2), bl, bh,
+            boxstyle=f"round,pad=0,rounding_size={bh/2}", fc=col, ec="none", mutation_aspect=1))
+        ax.text(pct_x, yc, f"{pct:.1f}%", ha="right", va="center", color="#1a2b3c", fontsize=fpct, fontweight="bold")
+    plt.subplots_adjust(left=0.02,right=0.98,top=0.82,bottom=0.05)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
-def chart_asesores(buckets, size_px, out):
+def chart_asesores(buckets, size_px, out, mf=False):
+    from matplotlib.patches import FancyBboxPatch
     fig, ax = _fig(size_px)
-    cats = ["1","2-3",">=4"]; vals = [buckets[c] for c in cats]
-    cols = [AS_BLUE, AS_GREY, AS_GREEN]
-    ax.bar(cats, vals, width=0.6, color=cols, zorder=3)
-    ymax = max(vals) or 1
-    ax.set_ylim(0, ymax*1.24)
-    for i,v in enumerate(vals):
-        ax.text(i, v+ymax*0.02, str(v), ha="center", va="bottom",
-                color=DARK, fontsize=24, fontweight="bold")
-    ax.set_title("Asesores por Rango de Ventas",
-                 color="#25384a", fontsize=15, fontweight="bold", pad=12)
-    ax.set_yticks([])
-    for sp in ("top","left","right"): ax.spines[sp].set_visible(False)
-    ax.spines["bottom"].set_color("#888")
-    ax.tick_params(axis="x", length=0, labelsize=15)
-    for lbl in ax.get_xticklabels(): lbl.set_color("#333")
-    plt.subplots_adjust(left=0.05, right=0.96, top=0.84, bottom=0.12)
+    cats=["1","2 - 3",">= 4"]; keys=["1","2-3",">=4"]
+    vals=[buckets.get(k,0) for k in keys]
+    cols=(MF_PALETTE if mf else PM_PALETTE)[:3]        # MISMA paleta de la sección
+    ax.set_xlim(0,100); ax.set_ylim(0,100); ax.axis("off")
+    _chart_header(fig, ax, "Asesores por Rango de Ventas", mf, size_px)
+    vmax=max(vals) or 1; n=len(cats); top=76; bot=8; rowh=(top-bot)/n
+    lab_x=2; bar_x0=15; bar_x1=70; val_x=78
+    for i,(cat,v,col) in enumerate(zip(cats,vals,cols)):
+        yc=top - rowh*(i+0.5)
+        ax.text(lab_x, yc, cat, ha="left", va="center", color=col, fontsize=15, fontweight="bold")
+        bh=min(rowh*0.30, 6.0)                                  # misma contextura que Participación por Familia
+        ax.add_patch(FancyBboxPatch((bar_x0, yc-bh/2), bar_x1-bar_x0, bh,
+            boxstyle=f"round,pad=0,rounding_size={bh/2}", fc="#E9EDF1", ec="none", mutation_aspect=1))   # pista gris
+        bl=max((bar_x1-bar_x0)*(v/vmax) if vmax else 0, bh)
+        ax.add_patch(FancyBboxPatch((bar_x0, yc-bh/2), bl, bh,
+            boxstyle=f"round,pad=0,rounding_size={bh/2}", fc=col, ec="none", mutation_aspect=1))          # barra de color
+        ax.text(val_x, yc+1.4, str(v), ha="left", va="center", color="#25384a", fontsize=19, fontweight="bold")
+        ax.text(val_x, yc-6.2, "asesores", ha="left", va="center", color="#8A97A4", fontsize=9)
+    plt.subplots_adjust(left=0.03,right=0.98,top=0.82,bottom=0.05)
     fig.savefig(out, dpi=150, transparent=True); plt.close(fig)
 
 
@@ -463,6 +527,7 @@ def update_presentation(template_bytes, excel_bytes):
                 rels = files.get(f"ppt/slides/_rels/{sid}.xml.rels", b"").decode("utf-8")
                 fam = plaza_familia(df, plaza, current)
                 aso = plaza_asesores(df, plaza, current)
+                mf_brand = ('val="6B150B"' in xml)   # sección MF (guinda) vs PlusMetas (azul)
                 for im in [i for i in slide_imgs.get(sid, []) if i != logo]:
                     w,h = Image.open(io.BytesIO(files[f"ppt/media/{im}"])).size
                     asp = _frame_aspect(xml, rels, im) or (w/h)
@@ -471,10 +536,10 @@ def update_presentation(template_bytes, excel_bytes):
                         chart_avances(s, plaza, size, buf, dia); files[f"ppt/media/{im}"]=buf.getvalue()
                     elif h >= 600 or w >= 950:              # Dona participacion
                         W=1700; size=(W, round(W/asp)); buf=io.BytesIO()
-                        chart_familia(fam, mesab, size, buf); files[f"ppt/media/{im}"]=buf.getvalue()
+                        chart_familia(fam, mesab, size, buf, mf=mf_brand); files[f"ppt/media/{im}"]=buf.getvalue()
                     else:                                    # Asesores por rango
                         W=1500; size=(W, round(W/asp)); buf=io.BytesIO()
-                        chart_asesores(aso, size, buf); files[f"ppt/media/{im}"]=buf.getvalue()
+                        chart_asesores(aso, size, buf, mf=mf_brand); files[f"ppt/media/{im}"]=buf.getvalue()
             else:
                 _fix_dates(doc, mes, year, dia); files[sf]=doc.toxml().encode("utf-8")
         else:
