@@ -40,7 +40,7 @@ DETAILS=[
  ("tc hibrido","BBVA",["HIBRIDO"],["TARJETAS"],"FORMALIZADAS","TC Híbrido (Tarjetas)"),
  ("operaciones digital","BBVA",["HIBRIDO"],["OPERACIONES"],"FORMALIZADAS","Operaciones Digital"),
  ("pld digital","BBVA",["HIBRIDO"],["PRESTAMOS"],"DESEMBOLSADO","PLD Digital"),
- ("tc respaldada","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TC Respaldada"),
+ ("tc smart","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TC SMART"),
  ("tarjetas de credito","DINERS",["-"],["TARJETAS"],"ACTIVADAS","Diners Tarjetas"),
  # UNICEF (subproductos; se usan también para clonar la sección)
  ("digital","UNICEF",["DIGITAL"],["DONACIONES"],"DONACIONES","UNICEF Digital"),
@@ -50,6 +50,12 @@ DETAILS=[
  ("upgrade linea","UNICEF",["UPGRADE LINEA"],["RETENCIONES"],"RETENCIONES","Upgrade Línea"),
 ]
 # ================================================================================================================
+# secciones con DOS barras en el gráfico: kw -> (serie_extra, etiqueta_extra, etiqueta_avance, titulo_grafico)
+TWOBAR={
+ "tarjetas de credito":("aprobada","APROBADAS","ACTIVADAS","Aprobadas y Activadas"),
+ "tc smart":("formalizada","FORMALIZADAS","ABONADAS","Formalizadas y Abonadas"),
+}
+EXTRACOL="#9DB4C0"   # color de la barra extra (aprobada/formalizada)
 
 def kfmt(v):
     v=float(v)
@@ -82,6 +88,8 @@ def series(df,unidad,subs,prods,current):
     periods=sorted(d.PERIODO.unique())
     def m(tipo,per): return d[(d.TIPO==tipo)&(d.PERIODO==per)]["MONTO"].sum()
     avance=[m("AVANCE",p) for p in periods]
+    aprobada=[m("APROBADA",p) for p in periods]
+    formalizada=[m("FORMALIZADA",p) for p in periods]
     pr_cur=m("PROYECCION",current); has_proj=pr_cur>0
     cierre=[(pr_cur if (p==current and has_proj) else m("CIERRE",p)) for p in periods]
     cur=periods.index(current) if current in periods else None
@@ -90,17 +98,32 @@ def series(df,unidad,subs,prods,current):
          "proyeccion":(pr_cur if has_proj else m("CIERRE",current)),
          "logro":(av/ma if ma else np.nan)}
     return {"periods":periods,"labels":[MES_ABBR[int(str(p)[4:6])] for p in periods],
-            "avance":avance,"cierre":cierre,"cur":cur,"kpi":kpi,"proj":has_proj,"has_data":len(periods)>0}
+            "avance":avance,"aprobada":aprobada,"formalizada":formalizada,
+            "cierre":cierre,"cur":cur,"kpi":kpi,"proj":has_proj,"has_data":len(periods)>0}
 
-def build_chart_series(s,title,size_px,out):
+def build_chart_series(s,title,size_px,out,extra_key=None,elabel=None,alabel="AVANCE"):
     labels,avance,cierre,cur=s["labels"],s["avance"],s["cierre"],s["cur"]
     n=len(labels); xs=np.arange(n); W,H=size_px; dpi=100
     fig,ax=plt.subplots(figsize=(W/dpi,H/dpi),dpi=dpi); fig.patch.set_alpha(0); ax.set_facecolor("none")
-    cmax=max(cierre) or 1; amax=max(avance) or 1; ax.set_ylim(0,cmax*1.34)
-    barh=[a*((cmax*0.42)/amax) for a in avance]
-    bcol=[CYAN if (cur is not None and i==cur) else TEAL for i in range(n)]
-    ax.bar(xs,barh,width=0.42,color=bcol,zorder=3)
-    for x,h,a in zip(xs,barh,avance): ax.text(x,h+cmax*0.02,kfmt(a),ha="center",va="bottom",color=SLATE,fontsize=40,fontweight="bold")
+    cmax=max(cierre) or 1; ax.set_ylim(0,cmax*1.34)
+    extra=s.get(extra_key) if extra_key else None
+    two = extra is not None and any(v>0 for v in extra)
+    if two:
+        allmax=max((max(avance) if avance else 0),(max(extra) if extra else 0)) or 1
+        scale=(cmax*0.42)/allmax; wbar=0.30
+        eh=[v*scale for v in extra]; ah=[a*scale for a in avance]
+        ax.bar(xs-wbar/2, eh, width=wbar, color=EXTRACOL, zorder=3)
+        ax.bar(xs+wbar/2, ah, width=wbar, color=TEAL, zorder=3)
+        for x,h,v in zip(xs,eh,extra):
+            if v>0: ax.text(x-wbar/2,h+cmax*0.02,kfmt(v),ha="center",va="bottom",color=SLATE,fontsize=32,fontweight="bold")
+        for x,h,a in zip(xs,ah,avance):
+            if a>0: ax.text(x+wbar/2,h+cmax*0.02,kfmt(a),ha="center",va="bottom",color=SLATE,fontsize=32,fontweight="bold")
+    else:
+        amax=max(avance) or 1
+        barh=[a*((cmax*0.42)/amax) for a in avance]
+        bcol=[CYAN if (cur is not None and i==cur) else TEAL for i in range(n)]
+        ax.bar(xs,barh,width=0.42,color=bcol,zorder=3)
+        for x,h,a in zip(xs,barh,avance): ax.text(x,h+cmax*0.02,kfmt(a),ha="center",va="bottom",color=SLATE,fontsize=40,fontweight="bold")
     proj=s.get("proj",True)
     if cur is not None and cur>0 and proj:
         ax.plot(xs[:cur+1],cierre[:cur+1],color=NAVY,lw=6,solid_capstyle="round",zorder=4)
@@ -116,8 +139,13 @@ def build_chart_series(s,title,size_px,out):
     for sp in ("top","left","right"): ax.spines[sp].set_visible(False)
     ax.spines["bottom"].set_color("#B0B0B0"); ax.spines["bottom"].set_linewidth(2); ax.set_xlim(-0.6,n-0.4)
     ax.text(-0.55,cmax*1.30,title,color=SLATE,fontsize=78,fontweight="bold",ha="left",va="top")
-    ax.legend(handles=[Patch(color=SLATE,label="AVANCE"),Patch(color=NAVY,label="CIERRE")],loc="upper right",ncol=2,
-              frameon=False,fontsize=46,handlelength=1.1,columnspacing=1.6,bbox_to_anchor=(1.0,0.99),labelcolor=[SLATE,NAVY])
+    if two:
+        legh=[Patch(color=EXTRACOL,label=elabel),Patch(color=TEAL,label=alabel),Patch(color=NAVY,label="CIERRE")]
+        ax.legend(handles=legh,loc="upper right",ncol=3,frameon=False,fontsize=38,handlelength=1.1,
+                  columnspacing=1.3,bbox_to_anchor=(1.0,0.99),labelcolor=[SLATE,TEAL,NAVY])
+    else:
+        ax.legend(handles=[Patch(color=SLATE,label="AVANCE"),Patch(color=NAVY,label="CIERRE")],loc="upper right",ncol=2,
+                  frameon=False,fontsize=46,handlelength=1.1,columnspacing=1.6,bbox_to_anchor=(1.0,0.99),labelcolor=[SLATE,NAVY])
     plt.subplots_adjust(left=0.01,right=0.99,top=0.99,bottom=0.09)
     fig.savefig(out,dpi=dpi,transparent=True); plt.close(fig)
 
@@ -317,7 +345,12 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
             if im and s["has_data"]:
                 px=Image.open(io.BytesIO(files[f"ppt/media/{im}"])).size
                 asp=_frame_aspect(files[sf].decode("utf-8"),rels,im) or (px[0]/px[1])
-                Wp=4750; buf=io.BytesIO(); build_chart_series(s,ctitle,(Wp,max(600,round(Wp/asp))),buf)
+                Wp=4750; buf=io.BytesIO()
+                tb=TWOBAR.get(kw)
+                if tb and any(v>0 for v in s.get(tb[0],[])):
+                    build_chart_series(s,tb[3],(Wp,max(600,round(Wp/asp))),buf,extra_key=tb[0],elabel=tb[1],alabel=tb[2])
+                else:
+                    build_chart_series(s,ctitle,(Wp,max(600,round(Wp/asp))),buf)
                 files[f"ppt/media/{im}"]=buf.getvalue()
                 if px[0]/px[1]<1.6:
                     warnings.append(f"{disp}: imagen compuesta (panel KPIs no está en el Excel); se regeneró solo el gráfico principal.")
@@ -351,7 +384,9 @@ def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_overrid
         else:
             g=groups.get(num,{"rows":[]}); rows=g["rows"]
             if not rows: continue
-            avg=summary_panel.agg_frac(rows)   # % agregado (avance/meta)
+            # CALL: cada fila es una campaña DISTINTA -> % general = PROMEDIO de los % de logro
+            _lg=[r["logro"] for r in rows if r["logro"] is not None]
+            avg=(sum(_lg)/len(_lg)) if _lg else float("nan")
             proy_total=sum((r["proy"] or 0) for r in rows)
             card4=None   # 1 sola campaña -> Proyección total (sin S/, suele ser conteo de TC)
             if len(rows)<=1:

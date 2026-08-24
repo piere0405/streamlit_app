@@ -41,11 +41,28 @@ if modo.startswith("Comité"):
                 except TypeError:
                     pptx,res,warns=campanias_updater.update_presentation(tpl, camp_bytes, conv_bytes)
                     st.warning("El motor desplegado es una versión anterior (sin 'día de corte'). Sube el campanias_updater.py más reciente y reinicia la app.")
-            st.success(f"Presentación lista · Periodo {res['mes']} (al día {res['dia']}).")
-            for w in warns: st.warning(w)
-            st.download_button("⬇  Descargar PowerPoint", pptx, file_name=f"campanias_{res['periodo']}.pptx", mime=MIME, type="primary", use_container_width=True)
+                import deck_split
+                conv_pptx, call_pptx = deck_split.split_two(pptx)
+                twozip = deck_split.zip_files([(f"CONVENIOS_{res['periodo']}.pptx",conv_pptx),
+                                               (f"CALL_{res['periodo']}.pptx",call_pptx)])
+                onezip = deck_split.zip_files(deck_split.split_sections(pptx))
+            st.session_state["gen"]={"pptx":pptx,"twozip":twozip,"onezip":onezip,
+                                     "periodo":res["periodo"],"mes":res["mes"],"dia":res["dia"],"warns":warns}
         except Exception as e:
             import traceback; st.error(f"Error: {e}"); st.code(traceback.format_exc())
+
+    g=st.session_state.get("gen")
+    if g:
+        st.success(f"Presentación lista · Periodo {g['mes']} (al día {g['dia']}).")
+        for w in g["warns"]: st.warning(w)
+        st.markdown('<div class="step">Descargas</div>', unsafe_allow_html=True)
+        ZIP="application/zip"
+        st.download_button("⬇  1) Descargar TODO (un solo PPT)", g["pptx"],
+                           file_name=f"campanias_{g['periodo']}.pptx", mime=MIME, type="primary", use_container_width=True)
+        st.download_button("⬇  2) Descargar Convenios + Call (ZIP · 2 archivos)", g["twozip"],
+                           file_name=f"convenios_y_call_{g['periodo']}.zip", mime=ZIP, use_container_width=True)
+        st.download_button("⬇  3) Descargar cada campaña por separado (ZIP · 1 por 1)", g["onezip"],
+                           file_name=f"campanias_separadas_{g['periodo']}.zip", mime=ZIP, use_container_width=True)
 elif modo.startswith("Reporte TLM"):
     st.markdown('<div class="step">Excel TLM</div>', unsafe_allow_html=True)
     f=st.file_uploader("tlm", type=["xlsx","xlsm"], key="tlm", label_visibility="collapsed")
