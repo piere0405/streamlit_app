@@ -37,7 +37,7 @@ def analyze(full_bytes):
         raw=_text(files,n); t=raw.upper()
         if ("COMITÉ SEMANAL" in t) or ("COMITE SEMANAL" in t):
             title=n; continue
-        (conv if "CONVENIO" in t else call).append(n)
+        (conv if ("CONVENIO" in t or "SANNA" in t) else call).append(n)   # SANNA va con Convenios
         if not any(x in t for x in EXCL):          # carátula -> nueva sección
             nm=_first_text(files,n)[:45]
             cur={"title":nm,"names":[n]}; sections.append(cur)

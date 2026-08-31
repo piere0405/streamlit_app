@@ -18,7 +18,10 @@ f_conv=st.file_uploader("conv", type=["xlsx","xlsm"], key="conv", label_visibili
 st.markdown('<div class="step">Paso 3 &nbsp;·&nbsp; Día de corte</div>', unsafe_allow_html=True)
 st.caption("Día hasta el que llega la información (todas las fechas del PPT dirán \u201cavance al día X\u201d).")
 dia_corte=st.number_input("Día de corte", min_value=1, max_value=31, value=5, step=1, label_visibility="collapsed")
-st.markdown('<div class="step">Paso 4 &nbsp;·&nbsp; Generar presentación</div>', unsafe_allow_html=True)
+st.markdown('<div class="step">Paso 4 &nbsp;·&nbsp; Excel de Compromisos <small>(opcional · Campaña · Compromiso)</small></div>', unsafe_allow_html=True)
+st.caption("Si lo subes, cada lámina de Diagnóstico mostrará los compromisos del comité anterior con ¿Cumplió? y Comentarios.")
+f_comp=st.file_uploader("comp", type=["xlsx","xlsm"], key="comp", label_visibility="collapsed")
+st.markdown('<div class="step">Paso 5 &nbsp;·&nbsp; Generar presentación</div>', unsafe_allow_html=True)
 ready=(f_camp is not None) and (f_conv is not None)
 if not ready: st.caption("Sube los dos Excel para habilitar el botón.")
 if st.button("Generar presentación consolidada", type="primary", disabled=not ready, use_container_width=True):
@@ -31,6 +34,12 @@ if st.button("Generar presentación consolidada", type="primary", disabled=not r
             except TypeError:
                 st.warning("El motor desplegado es una versión anterior (sin 'día de corte'). Sube el campanias_updater.py más reciente y reinicia la app.")
                 pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb)
+            if f_comp is not None:
+                try:
+                    import compromisos
+                    pptx=compromisos.fill(pptx, f_comp.read())
+                except Exception as ce:
+                    st.warning(f"No se pudieron colocar los compromisos (revisa el Excel o sube compromisos.py): {ce}")
         gen={"pptx":pptx,"twozip":None,"onezip":None,
              "periodo":res["periodo"],"mes":res["mes"],"dia":res["dia"],"warns":warns}
         try:
