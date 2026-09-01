@@ -27,7 +27,8 @@ _periods=[]
 if cb is not None:
     try: _periods=campanias_updater.available_periods(cb, vb)
     except Exception: _periods=[]
-_sysper=int(_dt.date.today().strftime("%Y%m"))
+#_sysper=int(_dt.date.today().strftime("%Y%m"))
+_sysper=202608
 if not _periods: _periods=[_sysper]
 _default=_sysper if _sysper in _periods else _periods[-1]
 sel_periodo=st.selectbox("Seleccionar mes del periodo", options=_periods,
