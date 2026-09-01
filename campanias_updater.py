@@ -40,7 +40,7 @@ DETAILS=[
  ("tc hibrido","BBVA",["HIBRIDO"],["TARJETAS"],"FORMALIZADAS","TC Híbrido (Tarjetas)"),
  ("operaciones digital","BBVA",["HIBRIDO"],["OPERACIONES"],"FORMALIZADAS","Operaciones Digital"),
  ("pld digital","BBVA",["HIBRIDO"],["PRESTAMOS"],"DESEMBOLSADO","PLD Digital"),
- ("tc start","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TC START"),
+ ("tc smart","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TC SMART"),
  ("tarjetas de credito","DINERS",["-"],["TARJETAS"],"ACTIVADAS","Diners Tarjetas"),
  # UNICEF (subproductos; se usan también para clonar la sección)
  ("digital","UNICEF",["DIGITAL"],["DONACIONES"],"DONACIONES","UNICEF Digital"),
@@ -53,7 +53,7 @@ DETAILS=[
 # secciones con DOS barras en el gráfico: kw -> (serie_extra, etiqueta_extra, etiqueta_avance, titulo_grafico)
 TWOBAR={
  "tarjetas de credito":("aprobada","APROBADAS","ACTIVADAS","Aprobadas y Activadas"),
- "tc start":("formalizada","FORMALIZADAS","ABONADAS","Formalizadas y Abonadas"),
+ "tc smart":("formalizada","FORMALIZADAS","ABONADAS","Formalizadas y Abonadas"),
 }
 EXTRACOL="#9DB4C0"   # color de la barra extra (aprobada/formalizada)
 
