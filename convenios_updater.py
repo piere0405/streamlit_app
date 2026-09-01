@@ -138,7 +138,8 @@ def plaza_series(df, plaza, current, bank=None):
     ticket  = [(a/o if o else 0) for a,o in zip(avance, ops)]
     cierre  = []
     for p in periods:
-        cierre.append(m("PROYECCION", p) if p == current else m("CIERRE", p))
+        # mes actual: usar PROYECCIÓN; si no se subió (0), es cierre -> usar CIERRE
+        cierre.append((m("PROYECCION", p) or m("CIERRE", p)) if p == current else m("CIERRE", p))
     cur_idx = periods.index(current) if current in periods else None
     kpi = {"avance": m("AVANCE",current), "meta_avance": m("META_AVANCE",current),
            "meta_mes": m("META_MES",current), "proyeccion": m("PROYECCION",current)}
@@ -519,14 +520,14 @@ def update_presentation(template_bytes, excel_bytes):
             num = int(re.findall(r"\d+", sid)[0])
             summary_panel.redesign_summary(files, num, avg, rows, proy_total)
         elif "meta avance" in low:
-            plaza = _title_plaza(doc)
-            if plaza and plaza in df.PLAZA.unique():
-                s = plaza_series(df, plaza, current)
+            bank, plaza = _title_bank_plaza(doc, df)
+            if plaza:
+                s = plaza_series(df, plaza, current, bank=bank)
                 edit_detail_text(doc, s["kpi"]); _fix_dates(doc, mes, year, dia)
                 files[sf] = doc.toxml().encode("utf-8")
                 rels = files.get(f"ppt/slides/_rels/{sid}.xml.rels", b"").decode("utf-8")
-                fam = plaza_familia(df, plaza, current)
-                aso = plaza_asesores(df, plaza, current)
+                fam = plaza_familia(df, plaza, current, bank=bank) if plaza!="GENERAL" else None
+                aso = plaza_asesores(df, plaza, current, bank=bank) if plaza!="GENERAL" else None
                 mf_brand = ('val="6B150B"' in xml)   # sección MF (guinda) vs PlusMetas (azul)
                 for im in [i for i in slide_imgs.get(sid, []) if i != logo]:
                     w,h = Image.open(io.BytesIO(files[f"ppt/media/{im}"])).size
@@ -534,10 +535,10 @@ def update_presentation(template_bytes, excel_bytes):
                     if w/h >= 1.85:                         # Avances (compuesto)
                         W=2400; size=(W, round(W/asp)); buf=io.BytesIO()
                         chart_avances(s, plaza, size, buf, dia); files[f"ppt/media/{im}"]=buf.getvalue()
-                    elif h >= 600 or w >= 950:              # Dona participacion
+                    elif (h >= 600 or w >= 950) and fam is not None:   # Dona/Participacion por familia
                         W=1700; size=(W, round(W/asp)); buf=io.BytesIO()
                         chart_familia(fam, mesab, size, buf, mf=mf_brand); files[f"ppt/media/{im}"]=buf.getvalue()
-                    else:                                    # Asesores por rango
+                    elif aso is not None:                    # Asesores por rango
                         W=1500; size=(W, round(W/asp)); buf=io.BytesIO()
                         chart_asesores(aso, size, buf, mf=mf_brand); files[f"ppt/media/{im}"]=buf.getvalue()
             else:
