@@ -3,6 +3,7 @@
 import os
 import streamlit as st
 import campanias_updater
+import convenios_updater
 
 st.set_page_config(page_title="Comité de Campañas · PlusMetas · MF", page_icon="📊", layout="centered")
 BASE=os.path.dirname(os.path.abspath(__file__))
@@ -15,25 +16,69 @@ st.markdown('<div class="step">Paso 1 &nbsp;·&nbsp; Excel de Campañas / Telema
 f_camp=st.file_uploader("camp", type=["xlsx","xlsm"], key="camp", label_visibility="collapsed")
 st.markdown('<div class="step">Paso 2 &nbsp;·&nbsp; Excel de Convenios<small>PLAZA · FAMILIA_CONVENIO · DNI_ASESOR_VENTA · MONTONETO …</small></div>', unsafe_allow_html=True)
 f_conv=st.file_uploader("conv", type=["xlsx","xlsm"], key="conv", label_visibility="collapsed")
-st.markdown('<div class="step">Paso 3 &nbsp;·&nbsp; Día de corte</div>', unsafe_allow_html=True)
+import datetime as _dt
+cb=f_camp.getvalue() if f_camp else None
+vb=f_conv.getvalue() if f_conv else None
+_MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+# Paso 3 · Mes del periodo (por defecto, el mes actual del sistema)
+st.markdown('<div class="step">Paso 3 &nbsp;·&nbsp; Mes del periodo</div>', unsafe_allow_html=True)
+st.caption("Mes que se mostrará/generará en todas las láminas. Por defecto, el mes actual del sistema.")
+_periods=[]
+if cb is not None:
+    try: _periods=campanias_updater.available_periods(cb, vb)
+    except Exception: _periods=[]
+_sysper=int(_dt.date.today().strftime("%Y%m"))
+if not _periods: _periods=[_sysper]
+_default=_sysper if _sysper in _periods else _periods[-1]
+sel_periodo=st.selectbox("Seleccionar mes del periodo", options=_periods,
+    index=_periods.index(_default),
+    format_func=lambda p: f"{_MESES[int(str(p)[4:6])-1]} {str(p)[:4]}", label_visibility="collapsed")
+# Paso 4 · Día de corte
+st.markdown('<div class="step">Paso 4 &nbsp;·&nbsp; Día de corte</div>', unsafe_allow_html=True)
 st.caption("Día hasta el que llega la información (todas las fechas del PPT dirán \u201cavance al día X\u201d).")
 dia_corte=st.number_input("Día de corte", min_value=1, max_value=31, value=5, step=1, label_visibility="collapsed")
-st.markdown('<div class="step">Paso 4 &nbsp;·&nbsp; Excel de Compromisos <small>(opcional · Campaña · Compromiso)</small></div>', unsafe_allow_html=True)
+# Paso 5 · Montos de Convenios (solo afecta el periodo seleccionado)
+st.markdown('<div class="step">Paso 5 &nbsp;·&nbsp; Montos de Convenios</div>', unsafe_allow_html=True)
+conv_modo=st.radio("Montos de Convenios", ["Dejar tal cual","Modificar"], horizontal=True, label_visibility="collapsed")
+conv_overrides=None
+if conv_modo=="Modificar" and vb is not None:
+    try:
+        _cdf,_ccur,_=convenios_updater.load_data(vb)
+        _bp=convenios_updater.conv_banks_plazas(_cdf)
+        _amts=convenios_updater.conv_amounts(_cdf, sel_periodo)
+        st.caption("Monto final de avance por Convenio + Plaza. Reemplaza solo el avance del periodo seleccionado de Convenios; el Excel no se modifica.")
+        conv_overrides={}
+        for _bank,_plazas in _bp.items():
+            st.markdown(f"**{_bank}**")
+            for _plaza in _plazas:
+                _cur=float(_amts.get((_bank,_plaza),0.0))
+                _v=st.number_input(f"{_bank} · {_plaza}", min_value=0.0, value=_cur, step=1000.0,
+                                   format="%.0f", key=f"cv_{_bank}_{_plaza}")
+                conv_overrides[(_bank,_plaza)]=_v
+    except Exception as _e:
+        st.warning(f"No se pudo leer Convenios para editar montos: {_e}")
+# Paso 6 · Excel de Compromisos
+st.markdown('<div class="step">Paso 6 &nbsp;·&nbsp; Excel de Compromisos <small>(opcional · Campaña · Compromiso)</small></div>', unsafe_allow_html=True)
 st.caption("Si lo subes, cada lámina de Diagnóstico mostrará los compromisos del comité anterior con ¿Cumplió? y Comentarios.")
 f_comp=st.file_uploader("comp", type=["xlsx","xlsm"], key="comp", label_visibility="collapsed")
-st.markdown('<div class="step">Paso 5 &nbsp;·&nbsp; Generar presentación</div>', unsafe_allow_html=True)
+st.markdown('<div class="step">Paso 7 &nbsp;·&nbsp; Generar presentación</div>', unsafe_allow_html=True)
 ready=(f_camp is not None) and (f_conv is not None)
 if not ready: st.caption("Sube los dos Excel para habilitar el botón.")
 if st.button("Generar presentación consolidada", type="primary", disabled=not ready, use_container_width=True):
     try:
         with st.spinner("Actualizando todas las unidades…"):
             tpl=open(os.path.join(BASE,"plantilla_campanias.pptx"),"rb").read()
-            cb=f_camp.read(); vb=f_conv.read()
             try:
-                pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb, dia_override=int(dia_corte))
+                pptx,res,warns=campanias_updater.update_presentation(
+                    tpl, cb, vb, dia_override=int(dia_corte),
+                    periodo_override=int(sel_periodo),
+                    conv_overrides=(conv_overrides if conv_modo=="Modificar" else None))
             except TypeError:
-                st.warning("El motor desplegado es una versión anterior (sin 'día de corte'). Sube el campanias_updater.py más reciente y reinicia la app.")
-                pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb)
+                st.warning("El motor desplegado es anterior (sin selector de mes / montos). Sube campanias_updater.py y convenios_updater.py más recientes y reinicia la app.")
+                try:
+                    pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb, dia_override=int(dia_corte))
+                except TypeError:
+                    pptx,res,warns=campanias_updater.update_presentation(tpl, cb, vb)
             if f_comp is not None:
                 try:
                     import compromisos

@@ -40,7 +40,7 @@ DETAILS=[
  ("tc hibrido","BBVA",["HIBRIDO"],["TARJETAS"],"FORMALIZADAS","TC Híbrido (Tarjetas)"),
  ("operaciones digital","BBVA",["HIBRIDO"],["OPERACIONES"],"FORMALIZADAS","Operaciones Digital"),
  ("pld digital","BBVA",["HIBRIDO"],["PRESTAMOS"],"DESEMBOLSADO","PLD Digital"),
- ("tc smart","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TC SMART"),
+ ("tarjeta start","BBVA",["HIBRIDO"],["TARJETAS RESPALDA"],"FORMALIZADAS","TARJETA START"),
  ("tarjetas de credito","DINERS",["-"],["TARJETAS"],"ACTIVADAS","Diners Tarjetas"),
  # UNICEF (subproductos; se usan también para clonar la sección)
  ("digital","UNICEF",["DIGITAL"],["DONACIONES"],"DONACIONES","UNICEF Digital"),
@@ -53,7 +53,7 @@ DETAILS=[
 # secciones con DOS barras en el gráfico: kw -> (serie_extra, etiqueta_extra, etiqueta_avance, titulo_grafico)
 TWOBAR={
  "tarjetas de credito":("aprobada","APROBADAS","ACTIVADAS","Aprobadas y Activadas"),
- "tc smart":("formalizada","FORMALIZADAS","ABONADAS","Formalizadas y Abonadas"),
+ "tarjeta start":("formalizada","FORMALIZADAS","ABONADAS","Formalizadas y Abonadas"),
 }
 EXTRACOL="#9DB4C0"   # color de la barra extra (aprobada/formalizada)
 
@@ -233,15 +233,36 @@ def _pick_chart(files,sid,slide_imgs,logos):
     if comp: return comp[0][0]
     return None
 
-def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_override=None):
+def available_periods(camp_excel, conv_excel=None):
+    """Lista de periodos (YYYYMM) presentes en los datos, para el selector de mes."""
+    pers=set()
+    try:
+        df,_,_=load(camp_excel); pers|=set(int(p) for p in df.PERIODO.unique())
+    except Exception: pass
+    if conv_excel is not None:
+        try:
+            cdf,_,_=CV.load_data(conv_excel); pers|=set(int(p) for p in cdf.PERIODO.unique())
+        except Exception: pass
+    return sorted(pers)
+
+def update_presentation(template_bytes, camp_excel, conv_excel=None, dia_override=None,
+                        periodo_override=None, conv_overrides=None):
     df,current,dia=load(camp_excel)
     if dia_override:  # día de corte elegido en la app -> todas las fechas "avance hasta el día X"
         try: dia=int(dia_override)
         except: pass
-    year,month=int(str(current)[:4]),int(str(current)[4:6]); mes=MES_FULL[month]
     convdf=convcur=None
     if conv_excel is not None:
         convdf,convcur,_=CV.load_data(conv_excel)
+    if periodo_override:  # mes elegido en la app -> se usa como periodo actual en TODO (campañas y convenios)
+        try:
+            current=int(periodo_override)
+            if convcur is not None: convcur=int(periodo_override)
+        except: pass
+    # override manual de montos de Convenios (solo periodo actual): {(BANCO,PLAZA): monto_final}
+    if conv_overrides and convdf is not None:
+        convdf=CV.apply_conv_overrides(convdf, convcur, conv_overrides)
+    year,month=int(str(current)[:4]),int(str(current)[4:6]); mes=MES_FULL[month]
 
     zin=zipfile.ZipFile(io.BytesIO(template_bytes)); files={n:zin.read(n) for n in zin.namelist()}; zin.close()
     refs=Counter(); slide_imgs={}

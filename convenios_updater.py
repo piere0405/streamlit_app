@@ -580,3 +580,59 @@ def group_raw(df):
     return df
 # ========================================================================
 
+
+
+# ============================================================================================
+# MODIFICACIÓN MANUAL DE MONTOS DE CONVENIOS (solo periodo actual) — no altera el Excel original
+# ============================================================================================
+def conv_banks_plazas(df):
+    """{BANCO: [plazas...]} presentes en los datos (dinámico)."""
+    out={}
+    if "UNIDAD" not in df.columns: return out
+    for b in [x for x in df.UNIDAD.dropna().unique()]:
+        pls=sorted([str(p) for p in df[df.UNIDAD==b].PLAZA.dropna().unique() if str(p).strip()])
+        out[str(b)]=pls
+    return out
+
+def conv_amounts(df, current):
+    """{(BANCO,PLAZA): avance_actual} para prellenar los campos del editor."""
+    out={}
+    try: cur=int(current)
+    except: return out
+    d=df[(df.PERIODO==cur)&(df.TIPO=="AVANCE")]
+    if "UNIDAD" not in d.columns: return out
+    for (b,p),g in d.groupby(["UNIDAD","PLAZA"]):
+        out[(str(b),str(p))]=float(g["MONTONETO"].sum())
+    return out
+
+def apply_conv_overrides(df, current, overrides):
+    """Devuelve una COPIA de df con el AVANCE (y CIERRE/PROYECCION) del periodo actual
+    escalado por banco+plaza para que el avance sume el 'monto final' indicado por el usuario.
+    Escala proporcionalmente para conservar el desglose por familia y por asesor.
+    No modifica el Excel original."""
+    if not overrides: return df
+    try: cur=int(current)
+    except: return df
+    df=df.copy()
+    for key,monto in overrides.items():
+        try:
+            bank,plaza=key; monto=float(monto)
+        except Exception:
+            continue
+        if monto is None or monto<0: continue
+        base=(df.UNIDAD==bank)&(df.PLAZA==plaza)&(df.PERIODO==cur)
+        old=df.loc[base&(df.TIPO=="AVANCE"),"MONTONETO"].sum()
+        if old>0:
+            factor=monto/old
+            for tipo in ("AVANCE","CIERRE","PROYECCION"):
+                mm=base&(df.TIPO==tipo)
+                if mm.any(): df.loc[mm,"MONTONETO"]=df.loc[mm,"MONTONETO"]*factor
+        elif monto>0:
+            ref=df[base]
+            row=(ref.iloc[0].copy() if len(ref) else None)
+            if row is not None:
+                for tipo in ("AVANCE","CIERRE"):
+                    r=row.copy(); r["TIPO"]=tipo; r["MONTONETO"]=monto
+                    if "FAMILIA_CONVENIO" in df.columns: r["FAMILIA_CONVENIO"]="OTROS"
+                    df=pd.concat([df,pd.DataFrame([r])],ignore_index=True)
+    return df

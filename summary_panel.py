@@ -386,6 +386,26 @@ def clean_panel(files, slide_num):
                 el.parentNode.removeChild(el); removed=True
     if removed: files[sp]=doc.toxml().encode("utf-8")
 
+def clear_body_shapes(files, slide_num, top_in=1.0, bottom_in=7.0):
+    """Elimina el contenido ANTIGUO del cuerpo del resumen (panel/cards/tabla de la plantilla),
+    conservando la cabecera (y<top_in), el pie (y>=bottom_in) y el logo. Se llama tras leer
+    los datos y antes de insertar el panel nuevo, para que no quede 'versión antigua' debajo."""
+    sp=f"ppt/slides/slide{slide_num}.xml"
+    if sp not in files: return
+    doc=parseString(files[sp].decode("utf-8")); tree=doc.getElementsByTagName("p:spTree")[0]
+    removed=False
+    for el in list(tree.childNodes):
+        if el.nodeType!=1 or el.tagName not in ("p:sp","p:pic","p:graphicFrame"): continue
+        offs=el.getElementsByTagName("a:off")
+        if not offs or not offs[0].getAttribute("y").strip(): continue   # sin posición -> conservar
+        y=int(offs[0].getAttribute("y"))/EMU
+        nv=el.getElementsByTagName("p:cNvPr")
+        name=nv[0].getAttribute("name") if nv else ""
+        if name in ("Panel Resumen","dato_manual"): continue             # elementos nuevos -> conservar
+        if top_in <= y < bottom_in:                                       # cuerpo viejo -> eliminar
+            tree.removeChild(el); removed=True
+    if removed: files[sp]=doc.toxml().encode("utf-8")
+
 def redesign_summary(files, slide_num, avg_frac, rows, proy_total, card4=None):
     clean_panel(files, slide_num)   # idempotente: elimina panel previo si el deck ya fue generado
     """rows: [{name, avance(float), logro(float|None), proy(float)}]  avg_frac: fraccion (0-1)."""
@@ -402,5 +422,6 @@ def redesign_summary(files, slide_num, avg_frac, rows, proy_total, card4=None):
     # llevan la cabecera de la tabla del mismo rojo; PlusMetas se queda en azul (NAVY).
     hdr_color = "#6B150B" if 'val="6B150B"' in slide_xml else NAVY
     png,edit_fields=render_panel(region_in, avg_frac, ctx, f"{cumple} / {n}", proy_total, rows, card4, hdr_color=hdr_color)
+    clear_body_shapes(files, slide_num)   # elimina el panel/tabla ANTIGUO de la plantilla (queda solo el panel nuevo)
     insert_panel(files, slide_num, region, png)
     insert_text_fields(files, slide_num, region, edit_fields)
