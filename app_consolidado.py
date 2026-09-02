@@ -23,16 +23,18 @@ _MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septi
 # Paso 3 · Mes del periodo (por defecto, el mes actual del sistema)
 st.markdown('<div class="step">Paso 3 &nbsp;·&nbsp; Mes del periodo</div>', unsafe_allow_html=True)
 st.caption("Mes que se mostrará/generará en todas las láminas. Por defecto, el mes actual del sistema.")
-_periods=[]
+_data_periods=[]
 if cb is not None:
-    try: _periods=campanias_updater.available_periods(cb, vb)
-    except Exception: _periods=[]
-#_sysper=int(_dt.date.today().strftime("%Y%m"))
-_sysper=202608
-if not _periods: _periods=[_sysper]
-_default=_sysper if _sysper in _periods else _periods[-1]
-sel_periodo=st.selectbox("Seleccionar mes del periodo", options=_periods,
-    index=_periods.index(_default),
+    try: _data_periods=campanias_updater.available_periods(cb, vb)
+    except Exception: _data_periods=[]
+_today=_dt.date.today()
+_cur=int(_today.strftime("%Y%m"))                               # mes actual del sistema
+_prev=int((_today.replace(day=1)-_dt.timedelta(days=1)).strftime("%Y%m"))  # mes previo
+# SIEMPRE ofrecer mes actual y mes previo; luego los demás meses presentes en los datos
+_opts=[_cur,_prev]+[p for p in sorted(_data_periods, reverse=True) if p not in (_cur,_prev)]
+st.caption("Por defecto el mes actual; elige el mes previo si necesitas generar el periodo anterior.")
+sel_periodo=st.selectbox("Seleccionar mes del periodo", options=_opts,
+    index=0,
     format_func=lambda p: f"{_MESES[int(str(p)[4:6])-1]} {str(p)[:4]}", label_visibility="collapsed")
 # Paso 4 · Día de corte
 st.markdown('<div class="step">Paso 4 &nbsp;·&nbsp; Día de corte</div>', unsafe_allow_html=True)
